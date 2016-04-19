@@ -1,0 +1,36 @@
+#IncludeRegexLine: ^[ 	]*#[ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/Brian/Mandelbrot/lodepng.h
+string.h
+-
+vector
+-
+string
+-
+lodepng.h
+/Users/Brian/Mandelbrot/lodepng.h
+iostream
+-
+lodepng.h
+/Users/Brian/Mandelbrot/lodepng.h
+
+/Users/Brian/Mandelbrot/mandelbrot.cpp
+SDL.h
+-
+SDL_image.h
+-
+stdio.h
+/Users/Brian/Mandelbrot/stdio.h
+stdlib.h
+/Users/Brian/Mandelbrot/stdlib.h
+math.h
+/Users/Brian/Mandelbrot/math.h
+lodepng.h
+/Users/Brian/Mandelbrot/lodepng.h
+
