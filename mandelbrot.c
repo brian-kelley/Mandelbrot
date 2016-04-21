@@ -6,6 +6,9 @@
 #include "pthread.h"
 #include "lodepng.h"
 
+#define max(a, b) (a < b ? b : a);
+#define min(a, b) (a < b ? a : b);
+
 typedef uint32_t Uint32;
 typedef long double real;
 
@@ -14,25 +17,23 @@ typedef struct
     real r;
     real i;
 } complex;
+real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
 
-real magSquared(complex* z)
-{
-    return z->r* z->r+ z->i* z->i;
-}
-
-#define winw 1440
+#define winw 1400
 #define winh 900
-#define maxiter 20000
 #define zoomFactor 1.5
 #define numImages 150
+#define totalIter 20000
 real screenX;
 real screenY;
 real width;
 real height;
 Uint32* pixbuf;
 int* iterbuf;
+Uint32* colortable;
 int filecount;
 int numThreads;
+int maxiter;
 
 void writeImage()
 {
@@ -77,15 +78,32 @@ void zoom()
     height -= dh;
 }
 
+void initColorTable()
+{
+    for(int i = 0; i < totalIter; i++)
+    {
+        int red = 0;
+        int grn = abs(((i + 150) % 512) - 256);
+        int blu = 0xFF - grn;
+        float scale = (256.0 * 256.0) / (red * red + grn * grn + blu * blu);
+        red *= scale;
+        grn *= scale;
+        blu *= scale;
+        red = min(255, red);
+        grn = min(255, grn);
+        blu = min(255, blu);
+        red = max(0, red);
+        grn = max(0, grn);
+        blu = max(0, blu);
+        colortable[i] = 0xFF000000 | red << 0 | grn << 8 | blu << 16;
+    }
+}
+
 Uint32 getColor(int num)
 {
     if(num == -1)
         return 0xFF000000;                  //in the mandelbrot set = opaque black
-    num = sqrt(num);
-    unsigned char red = 0xFF;
-    unsigned char grn = (num * 29) % 255;
-    unsigned char blu = (num * 7) % 255;
-    return 0xFF000000 | blu | grn << 8 | red << 16;
+    return colortable[num % 512];
 }
 
 int getConvRate(complex c)
@@ -168,6 +186,9 @@ void drawBuf()
 
 int main(int argc, const char** argv)
 {
+    maxiter = 500;
+    colortable = (Uint32*) malloc(sizeof(Uint32) * maxiter);
+    initColorTable();
     screenX = -2;
     screenY = -1;
     width = 3;
@@ -186,9 +207,13 @@ int main(int argc, const char** argv)
         drawBuf();
         writeImage();
         zoom();
+        maxiter *= 1.05;
+        if(maxiter > totalIter)
+            maxiter = totalIter;
         real time = (real) (clock() - start) / CLOCKS_PER_SEC;
         printf("Generated image #%i in %Lf seconds.\n", filecount - 1, time);
     }
     free(iterbuf);
     free(pixbuf);
+    free(colortable);
 }
