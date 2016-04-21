@@ -6,26 +6,29 @@
 #include "pthread.h"
 #include "lodepng.h"
 
+typedef uint32_t Uint32;
+typedef long double real;
+
 typedef struct
 {
-    double real;
-    double imag;
+    real r;
+    real i;
 } complex;
 
-double magSquared(complex* z)
+real magSquared(complex* z)
 {
-    return z->real * z->real + z->imag * z->imag;
+    return z->r* z->r+ z->i* z->i;
 }
 
-typedef uint32_t Uint32;
-
-#define winw 320
-#define winh 200
-#define maxiter 40000
-double screenX;
-double screenY;
-double width;
-double height;
+#define winw 1440
+#define winh 900
+#define maxiter 20000
+#define zoomFactor 1.5
+#define numImages 150
+real screenX;
+real screenY;
+real width;
+real height;
 Uint32* pixbuf;
 int* iterbuf;
 int filecount;
@@ -65,12 +68,11 @@ void zoom()
     printf("Deepest pixel has %i iters.\n", bestIter);
     //now zoom to (bestX, bestY)
     //zoom in by factor of 1.5
-    const double zoomFactor = 1.5;
     //get the decrease in width and height
-    double dw = width * (1 - 1 / zoomFactor);
-    double dh = height * (1 - 1 / zoomFactor);
-    screenX += dw * ((double) bestX / winw);
-    screenY += dh * ((double) bestY / winh);
+    real dw = width * (1 - 1 / zoomFactor);
+    real dh = height * (1 - 1 / zoomFactor);
+    screenX += dw * ((real) bestX / winw);
+    screenY += dh * ((real) bestY / winh);
     width -= dw;
     height -= dh;
 }
@@ -88,15 +90,15 @@ Uint32 getColor(int num)
 
 int getConvRate(complex c)
 {
-    const double stop = 4;
+    const real stop = 4;
     int iter = 0;
     complex z = {0, 0};
     while(magSquared(&z) < stop)
     {
         complex temp;
         //z = z^2 + c
-        temp.real = z.real * z.real - z.imag * z.imag + c.real;
-        temp.imag = 2 * z.real * z.imag + c.imag;
+        temp.r = z.r * z.r - z.i * z.i + c.r;
+        temp.i = 2 * z.r * z.i + c.i;
         z = temp;
         iter++;
         if(iter == maxiter)
@@ -116,8 +118,8 @@ void* workerFunc(void* indexAsInt)
     {
         for(int j = 0; j < winh; j++)
         {
-            double realPos = screenX + width * (double) i / winw;
-            double imagPos = screenY + height * (double) j / winh;
+            real realPos = screenX + width * (real) i / winw;
+            real imagPos = screenY + height * (real) j / winh;
             complex c = {realPos, imagPos};
             int convRate = getConvRate(c);
             pixbuf[j * winw + i] = getColor(convRate);
@@ -135,8 +137,8 @@ void drawBuf()
         {
             for(int j = 0; j < winh; j++)
             {
-                double realPos = screenX + width * (double) i / winw;
-                double imagPos = screenY + height * (double) j / winh;
+                real realPos = screenX + width * (real) i / winw;
+                real imagPos = screenY + height * (real) j / winh;
                 complex c = {realPos, imagPos};
                 int convRate = getConvRate(c);
                 pixbuf[j * winw + i] = getColor(convRate);
@@ -178,14 +180,14 @@ int main(int argc, const char** argv)
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
-    for(int i = 0; i < 40; i++)
+    for(int i = 0; i < 150; i++)
     {
         clock_t start = clock();
         drawBuf();
         writeImage();
         zoom();
-        double time = (double) (clock() - start) / CLOCKS_PER_SEC;
-        printf("Generated image #%i in %f seconds.\n", filecount - 1, time);
+        real time = (real) (clock() - start) / CLOCKS_PER_SEC;
+        printf("Generated image #%i in %Lf seconds.\n", filecount - 1, time);
     }
     free(iterbuf);
     free(pixbuf);
