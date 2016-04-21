@@ -19,11 +19,11 @@ typedef struct
 } complex;
 real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
 
-#define winw 1400
-#define winh 900
+#define winw 640
+#define winh 400
 #define zoomFactor 1.5
 #define numImages 150
-#define totalIter 20000
+#define totalIter (1 << 17)
 real screenX;
 real screenY;
 real width;
@@ -82,19 +82,9 @@ void initColorTable()
 {
     for(int i = 0; i < totalIter; i++)
     {
-        int red = 0;
-        int grn = abs(((i + 150) % 512) - 256);
-        int blu = 0xFF - grn;
-        float scale = (256.0 * 256.0) / (red * red + grn * grn + blu * blu);
-        red *= scale;
-        grn *= scale;
-        blu *= scale;
-        red = min(255, red);
-        grn = min(255, grn);
-        blu = min(255, blu);
-        red = max(0, red);
-        grn = max(0, grn);
-        blu = max(0, blu);
+        int red = abs(((i) % 512 + 256) - 256);
+        int grn = abs((((i + 150) * 2) % 512) - 256);
+        int blu = abs(((i - grn) % 512) - 256);
         colortable[i] = 0xFF000000 | red << 0 | grn << 8 | blu << 16;
     }
 }
