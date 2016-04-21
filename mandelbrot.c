@@ -19,11 +19,12 @@ typedef struct
 } complex;
 real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
 
-#define winw 640
-#define winh 400
+#define winw 2560
+#define winh 1600
 #define zoomFactor 1.5
+#define zoomRange 0.2
 #define numImages 150
-#define totalIter (1 << 17)
+#define totalIter (1 << 20)
 real screenX;
 real screenY;
 real width;
@@ -54,9 +55,13 @@ void zoom()
     int bestX = 0;
     int bestY = 0;
     int bestIter = 0;
-    for(int i = winw / 3; i < winw * 2 / 3; i++)
+    int xStart = winw * (1 - zoomRange) / 2;
+    int yStart = winh * (1 - zoomRange) / 2;
+    int xRange = winw * zoomRange;
+    int yRange = winh * zoomRange;
+    for(int i = xStart; i < xStart + xRange; i++)
     {
-        for(int j = winh / 3; j < winh * 2 / 3; j++)
+        for(int j = yStart; j < yStart + yRange; j++)
         {
             if(iterbuf[i + j * winw] > bestIter)
             {
@@ -197,7 +202,7 @@ int main(int argc, const char** argv)
         drawBuf();
         writeImage();
         zoom();
-        maxiter *= 1.05;
+        maxiter *= 1.09;
         if(maxiter > totalIter)
             maxiter = totalIter;
         real time = (real) (clock() - start) / CLOCKS_PER_SEC;
