@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 3.0)
 project(Mandelbrot)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c99 -O2 -I/Library/Frameworks/SDL2.framework/Headers -F/Library/Frameworks")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11 -O2 -ffast-math")
 add_executable (Mandelbrot mandelbrot.c lodepng.h lodepng.c)
-target_link_libraries(Mandelbrot ${SDL2_LIB})
+find_library(PTHREAD_LIB pthread)
+target_link_libraries(Mandelbrot ${PTHREAD_LIB})
