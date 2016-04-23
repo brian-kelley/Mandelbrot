@@ -1,3 +1,5 @@
 build/
+output/
+output*
 .DS_Store
 *.swp
