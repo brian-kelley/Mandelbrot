@@ -19,10 +19,18 @@ typedef struct
 } complex;
 real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
 
-#define winw 2560
-#define winh 1600
+enum Locations
+{
+    SEAHORSE,
+    ELEPHANT,
+    DRAGON,
+    ANY
+};
+
+#define winw 640
+#define winh 400
 #define zoomFactor 1.5
-#define zoomRange 0.2
+#define zoomRange 1.0
 #define numImages 150
 #define numColors 360
 #define totalIter (1 << 20)
@@ -36,6 +44,8 @@ Uint32* colortable;
 int filecount;
 int numThreads;
 int maxiter;
+real targetX;
+real targetY;
 
 void writeImage()
 {
@@ -82,6 +92,16 @@ void zoom()
     screenY += dh * ((real) bestY / winh);
     width -= dw;
     height -= dh;
+}
+
+void zoomToTarget()
+{
+    //should zoom towards exact center of the screen
+    //choose the deepest pixel in a 4x4 area in the center of the view
+    width /= zoomFactor;
+    height /= zoomFactor;
+    screenX = targetX - width / 2;
+    screenY = targetY - height / 2;
 }
 
 void initColorTable()
@@ -131,7 +151,7 @@ Uint32 getColor(int num)
     return colortable[num % numColors];
 }
 
-int getConvRate(complex c)
+int getConvRate(complex* c)
 {
     const real stop = 4;
     int iter = 0;
@@ -140,8 +160,8 @@ int getConvRate(complex c)
     {
         complex temp;
         //z = z^2 + c
-        temp.r = z.r * z.r - z.i * z.i + c.r;
-        temp.i = 2 * z.r * z.i + c.i;
+        temp.r = z.r * z.r - z.i * z.i + c->r;
+        temp.i = 2 * z.r * z.i + c->i;
         z = temp;
         iter++;
         if(iter == maxiter)
@@ -164,7 +184,7 @@ void* workerFunc(void* indexAsInt)
             real realPos = screenX + width * (real) i / winw;
             real imagPos = screenY + height * (real) j / winh;
             complex c = {realPos, imagPos};
-            int convRate = getConvRate(c);
+            int convRate = getConvRate(&c);
             pixbuf[j * winw + i] = getColor(convRate);
             iterbuf[j * winw + i] = convRate;
         }
@@ -183,7 +203,7 @@ void drawBuf()
                 real realPos = screenX + width * (real) i / winw;
                 real imagPos = screenY + height * (real) j / winh;
                 complex c = {realPos, imagPos};
-                int convRate = getConvRate(c);
+                int convRate = getConvRate(&c);
                 pixbuf[j * winw + i] = getColor(convRate);
                 iterbuf[j * winw + i] = convRate;
             }
@@ -224,15 +244,92 @@ void recomputeMaxIter()
     maxiter = avg + 800;
 }
 
+void getInterestingLocation(int depth)
+{
+    //make a temporary iteration count buffer
+    int pw = 50;    //pixel width
+    int ph = 50;    //pixel height
+    real x = 0;
+    real y = 0;
+    real w = 2;
+    real h = 2;
+    int* escapeTimes = (int*) malloc(sizeof(int) * pw * ph);
+    real quickzoom = 2;
+    maxiter = 50;
+    while(depth > 0)
+    {
+        real xstep = w / pw;
+        real ystep = h / ph;
+        real ystart = y - h / 2;
+        complex iter = {x - w / 2, ystart};
+        for(int px = 0; px < pw; px++)
+        {
+            iter.i = ystart;
+            for(int py = 0; py < ph; py++)
+            {
+                escapeTimes[px + py * pw] = getConvRate(&iter);
+                iter.i += ystep;
+            }
+            iter.r += xstep;
+        }
+        int bestPX;
+        int bestPY;
+        int bestIters = 0;
+        for(int i = 0; i < pw; i++)
+        {
+            for(int j = 0; j < ph; j++)
+            {
+                if(escapeTimes[i + j * pw] > bestIters)
+                {
+                    bestPX = i;
+                    bestPY = j;
+                    bestIters = escapeTimes[i + j * pw];
+                }
+            }
+        }
+        if(bestIters == 0)
+        {
+            puts("getInterestingLocation() stuck on window of converging points!");
+            puts("Decrease zoom factor or increase resolution.");
+            break;
+        }
+        maxiter = bestIters + 200;
+        bestPX -= pw / 2;   //center the pixel position
+        bestPY -= ph / 2;
+        x += xstep * bestPX;
+        y += ystep * bestPY;
+        w /= quickzoom;
+        h /= quickzoom;
+        depth--;
+    }
+    free(escapeTimes);
+    printf("Will zoom towards %.10Lf, %.10Lf\n", x, y);
+    targetX = x;
+    targetY = y;
+}
+
 int main(int argc, const char** argv)
 {
+    /*
+    int location = ANY;
+    for(int i = 1; i < argc; i++)
+    {
+        if(strcmp(argv[i], "seahorse") == 0)
+            location = SEAHORSE;
+        if(strcmp(argv[i], "elephant") == 0)
+            location = ELEPHANT;
+        if(strcmp(argv[i], "dragon") == 0)
+            location = DRAGON;
+    }
+    */
+    getInterestingLocation(100);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
-    screenX = -2;
-    screenY = -1;
-    width = 3;
+    width = 3.2;
     height = 2;
+    screenX = targetX - width / 2;
+    screenY = targetY - height / 2;
     if(argc == 2)
         sscanf(argv[1], "%i", &numThreads);
     else
@@ -246,7 +343,8 @@ int main(int argc, const char** argv)
         time_t start = time(NULL);
         drawBuf();
         writeImage();
-        zoom();
+        //zoom();
+        zoomToTarget();
         recomputeMaxIter();
         if(maxiter > totalIter)
             maxiter = totalIter;
