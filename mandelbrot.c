@@ -228,15 +228,15 @@ int main(int argc, const char** argv)
     filecount = 0;
     for(int i = 0; i < 150; i++)
     {
-        clock_t start = clock();
+        time_t start = time(NULL);
         drawBuf();
         writeImage();
         zoom();
         maxiter += 50;
         if(maxiter > totalIter)
             maxiter = totalIter;
-        real time = (real) (clock() - start) / CLOCKS_PER_SEC;
-        printf("Generated image #%i in %Lf seconds.\n", filecount - 1, time);
+        int timeDiff = time(NULL) - start;
+        printf("Generated image #%3i in %6i seconds.\n", filecount - 1, timeDiff);
     }
     free(iterbuf);
     free(pixbuf);
