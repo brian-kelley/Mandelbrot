@@ -209,6 +209,21 @@ void drawBuf()
     free(threads);
 }
 
+void recomputeMaxIter()
+{
+    int numPixels = winw * winh;
+    unsigned long long total = 0;
+    int numColored = 0;
+    for(int i = 0; i < numPixels; i++)
+    {
+        if(iterbuf[i] != -1)
+        total += iterbuf[i];
+        numColored++;
+    }
+    double avg = (double) total / numColored;
+    maxiter = avg + 800;
+}
+
 int main(int argc, const char** argv)
 {
     maxiter = 500;
@@ -232,7 +247,7 @@ int main(int argc, const char** argv)
         drawBuf();
         writeImage();
         zoom();
-        maxiter += 50;
+        recomputeMaxIter();
         if(maxiter > totalIter)
             maxiter = totalIter;
         int timeDiff = time(NULL) - start;
