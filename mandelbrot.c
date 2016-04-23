@@ -24,6 +24,7 @@ real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
 #define zoomFactor 1.5
 #define zoomRange 0.2
 #define numImages 150
+#define numColors 360
 #define totalIter (1 << 20)
 real screenX;
 real screenY;
@@ -85,7 +86,36 @@ void zoom()
 
 void initColorTable()
 {
-    for(int i = 0; i < totalIter; i++)
+    for(int i = 0; i < numColors; i++)
+    {
+        int t = (i * 5) % 360;
+        int r = 0;
+        int g = 0;
+        int b = 0;
+        float slope = 255.0 / 120;
+        if(t <= 120)
+        {
+            r = 255 - slope * t;
+        }
+        if(t >= 240)
+        {
+            r = 255 - slope * (360 - t);
+        }
+        if(t <= 240)
+        {
+            g = 255 - slope * abs((t - 120) % 360);
+        }
+        if(t >= 120)
+        {
+            b = 255 - slope * abs((t - 240) % 360);
+        }
+        colortable[i] = 0xFF000000 | r << 0 | g << 8 | b << 16;
+    }
+}
+
+void initOldColorTable()
+{
+    for(int i = 0; i < numColors; i++)
     {
         int red = abs(((i) % 512 + 256) - 256);
         int grn = abs((((i + 150) * 2) % 512) - 256);
@@ -98,7 +128,7 @@ Uint32 getColor(int num)
 {
     if(num == -1)
         return 0xFF000000;                  //in the mandelbrot set = opaque black
-    return colortable[num % 512];
+    return colortable[num % numColors];
 }
 
 int getConvRate(complex c)
@@ -182,7 +212,7 @@ void drawBuf()
 int main(int argc, const char** argv)
 {
     maxiter = 500;
-    colortable = (Uint32*) malloc(sizeof(Uint32) * maxiter);
+    colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
     screenX = -2;
     screenY = -1;
