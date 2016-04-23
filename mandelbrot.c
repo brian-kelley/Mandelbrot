@@ -232,7 +232,7 @@ int main(int argc, const char** argv)
         drawBuf();
         writeImage();
         zoom();
-        maxiter *= 1.09;
+        maxiter += 50;
         if(maxiter > totalIter)
             maxiter = totalIter;
         real time = (real) (clock() - start) / CLOCKS_PER_SEC;
