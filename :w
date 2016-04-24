@@ -254,7 +254,7 @@ void getInterestingLocation(int depth)
     real w = 2;
     real h = 2;
     int* escapeTimes = (int*) malloc(sizeof(int) * pw * ph);
-    real quickzoom = 2;
+    real quickzoom = 3;
     maxiter = 50;
     while(depth > 0)
     {
@@ -290,10 +290,11 @@ void getInterestingLocation(int depth)
         if(bestIters == 0)
         {
             puts("getInterestingLocation() stuck on window of converging points!");
+            printf("Window width is %Le\n", 
             puts("Decrease zoom factor or increase resolution.");
             break;
         }
-        maxiter = bestIters + 200;
+        maxiter = bestIters + 100;
         bestPX -= pw / 2;   //center the pixel position
         bestPY -= ph / 2;
         x += xstep * bestPX;
