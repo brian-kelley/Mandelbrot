@@ -5,8 +5,9 @@ static u64* scratch;
 BigInt BigIntCtor(int size)
 {
     BigInt rv;
-    rv.val = (u64*) calloc(size, sizeof(u64));  //initialize to 0
+    rv.val = (u64*) malloc(size * sizeof(u64));  //initialize to 0
     rv.size = size;
+    memset(rv.val, 0, size * sizeof(u64));
     return rv;
 }
 
@@ -35,7 +36,7 @@ static bool biAddWord(BigInt* bi, u64 word, int position)
         if(carry)
         {
             bi->val[i]++;
-            carry = bi->val[i] & carryMask;
+            carry = !!(bi->val[i] & carryMask);
             bi->val[i] &= digitMask;
         }
         else
@@ -47,18 +48,20 @@ static bool biAddWord(BigInt* bi, u64 word, int position)
 void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //zero out dst
-    for(int i = 0; i < dst->size; i++)
+    int words = lhs->size;
+    for(int i = 0; i < 2 * words; i++)
         dst->val[i] = 0;
     //first, compute the low half of the full result
-    for(int i = lhs->size - 1; i >= 0; i--)          //i = index of word of *this
+    for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
     {
-        for(int j = lhs->size - 1; j >= 0; j--)      //j = index of word of rhs
+        for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
         {
             //do the long multiplication
             u64 hi, lo;
             longmul(lhs->val[i], rhs->val[j], &hi, &lo);
-            biAddWord(dst, lo, i + j);
-            biAddWord(dst, hi, i + j + 1);
+            int destWord = i + j + 1;
+            biAddWord(dst, lo, destWord);
+            biAddWord(dst, hi, destWord - 1);
         }
     }
 }
@@ -160,7 +163,6 @@ void bishr(BigInt* op, int bits)
     }
 }
 
-
 void bishlOne(BigInt* op)
 {
     for(int i = 0; i < op->size - 1; i++)
@@ -198,7 +200,29 @@ void biTwoComplement(BigInt* op)
     biinc(op);
 }
 
-void staticFloatInit(int maxPrec)
+void biPrint(BigInt* op)
+{
+    int numQwords = ceil((op->size * 63.0) / 64.0);
+    for(int qword = 0; qword < numQwords; qword++)
+    {
+        u64 bits = 0;
+        for(int i = 0; i < 64; i++)
+            bits |= (biNthBit(op, 64 * (numQwords - 1 - qword) + i) << i);
+        printf("%016llx", bits);
+    }
+    puts("");
+}
+
+u64 biNthBit(BigInt* op, int n)
+{
+    if(n < 0 || n >= op->size * 63)
+        return 0;
+    int word = n / 63;
+    int bit = n % 63;
+    return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
+}
+
+void staticPrecInit(int maxPrec)
 {
     scratch = (u64*) malloc(2 * maxPrec * sizeof(u64));
 }
@@ -274,6 +298,11 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
+    //compare magnitudes (want lhs to be larger magnitude)
+    if(!(lhs->sign || rhs->sign))
+    {
+        //lhs, rhs positive
+    }
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)
@@ -294,4 +323,5 @@ bool fzero(Float* f)
 
 int fcmp(Float* lhs, Float* dst)
 {
+    return 0;
 }

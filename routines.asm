@@ -10,7 +10,7 @@ _longmul:
 ; f2 in rsi
 ; phi in rdx
 ; plo in rcx
-mov r8 , rdx        ; save phi because mul overwrites rdx
+mov r8, rdx        ; save phi because mul overwrites rdx
 mov rax, rdi
 mul qword rsi
 ; high qword of result in rdx, low in rax

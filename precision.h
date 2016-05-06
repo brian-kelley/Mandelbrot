@@ -2,6 +2,7 @@
 #include "stdlib.h"
 #include "string.h"
 #include "stdbool.h"
+#include "stdio.h"
 
 #ifndef PRECISION_H
 #define PRECISION_H
@@ -37,6 +38,8 @@ void bishr(BigInt* op, int bits);
 void bishlOne(BigInt* op);
 void bishl(BigInt* op, int bits);
 void biTwoComplement(BigInt* op);
+void biPrint(BigInt* op);
+u64 biNthBit(BigInt* op, int n);
 
 /*  Simple arbitrary precision floating point value
  *  Multiply, add, subtract

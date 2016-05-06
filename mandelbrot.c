@@ -302,6 +302,22 @@ void getInterestingLocation(int depth, real minWidth)
 
 int main(int argc, const char** argv)
 {
+    staticPrecInit(100);
+    BigInt f1 = BigIntCtor(4);
+    BigInt product = BigIntCtor(8);
+    //set f1 and product to 1
+    biinc(&f1);
+    biinc(&product);
+    for(int i = 1; i < 100; i++)
+    {
+        biinc(&f1);
+        BigInt temp = BigIntCtor(4);
+        for(int i = 0; i < 4; i++)
+            temp.val[i] = product.val[i + 4];
+        bimul(&product, &temp, &f1);
+        biPrint(&product);
+    }
+    return 0;
     /*
     int location = ANY;
     for(int i = 1; i < argc; i++)
