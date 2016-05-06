@@ -5,6 +5,7 @@
 #include "time.h"
 #include "pthread.h"
 #include "lodepng.h"
+#include "precision.h"
 
 #define max(a, b) (a < b ? b : a);
 #define min(a, b) (a < b ? a : b);
@@ -27,8 +28,8 @@ enum Locations
     ANY
 };
 
-#define winw 640
-#define winh 400
+#define winw 2560   
+#define winh 1600
 #define zoomFactor 1.5
 #define zoomRange 1.0
 #define numImages 150
@@ -114,21 +115,13 @@ void initColorTable()
         int b = 0;
         float slope = 255.0 / 120;
         if(t <= 120)
-        {
             r = 255 - slope * t;
-        }
         if(t >= 240)
-        {
             r = 255 - slope * (360 - t);
-        }
         if(t <= 240)
-        {
             g = 255 - slope * abs((t - 120) % 360);
-        }
         if(t >= 120)
-        {
             b = 255 - slope * abs((t - 240) % 360);
-        }
         colortable[i] = 0xFF000000 | r << 0 | g << 8 | b << 16;
     }
 }
@@ -222,9 +215,7 @@ void drawBuf()
         }
     }
     for(int i = 0; i < numThreads; i++)
-    {
         pthread_join(threads[i], NULL);
-    }
     free(indices);
     free(threads);
 }
@@ -241,22 +232,22 @@ void recomputeMaxIter()
         numColored++;
     }
     double avg = (double) total / numColored;
-    maxiter = avg + 800;
+    maxiter = avg + 2000;
 }
 
-void getInterestingLocation(int depth)
+void getInterestingLocation(int depth, real minWidth)
 {
     //make a temporary iteration count buffer
-    int pw = 50;    //pixel width
-    int ph = 50;    //pixel height
+    int pw = 30;    //pixel width
+    int ph = 30;    //pixel height
     real x = 0;
     real y = 0;
     real w = 2;
     real h = 2;
     int* escapeTimes = (int*) malloc(sizeof(int) * pw * ph);
-    real quickzoom = 3;
+    real quickzoom = 20;
     maxiter = 50;
-    while(depth > 0)
+    while(depth > 0 && w >= minWidth)
     {
         real xstep = w / pw;
         real ystep = h / ph;
@@ -290,7 +281,7 @@ void getInterestingLocation(int depth)
         if(bestIters == 0)
         {
             puts("getInterestingLocation() stuck on window of converging points!");
-            printf("Window width is %Le\n", 
+            printf("Window width is %Le\n", w);
             puts("Decrease zoom factor or increase resolution.");
             break;
         }
@@ -323,7 +314,7 @@ int main(int argc, const char** argv)
             location = DRAGON;
     }
     */
-    getInterestingLocation(100);
+    getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
@@ -350,7 +341,7 @@ int main(int argc, const char** argv)
         if(maxiter > totalIter)
             maxiter = totalIter;
         int timeDiff = time(NULL) - start;
-        printf("Generated image #%3i in %6i seconds.\n", filecount - 1, timeDiff);
+        printf("Generated image #%4i in %6i seconds.\n", filecount - 1, timeDiff);
     }
     free(iterbuf);
     free(pixbuf);

@@ -1,6 +1,0 @@
-cmake_minimum_required (VERSION 3.0)
-project(Mandelbrot)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11 -O3 -ffast-math")
-add_executable (Mandelbrot mandelbrot.cpp lodepng.h lodepng.cpp)
-find_library(PTHREAD_LIB pthread)
-target_link_libraries(Mandelbrot ${PTHREAD_LIB})
