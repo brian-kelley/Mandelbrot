@@ -14,6 +14,9 @@ typedef unsigned long long u64;
 #define digitMask (~carryMask)
 #define expoBias (0x7FFFFFFF)  //this value is subtracted from actual exponent
 
+#define max(a, b) (a < b ? b : a);
+#define min(a, b) (a < b ? a : b);
+
 void staticPrecInit(int maxPrec);   //allocate math scratch space
 
 //routine implemented in asm
@@ -44,9 +47,11 @@ u64 biNthBit(BigInt* op, int n);
 
 /*  Simple arbitrary precision floating point value
  *  Multiply, add, subtract
- *  Very similar to the IEEE 80-bit format, with extended mantissa
- *  No support for math with subnormals
+ *  Very similar to the IEEE 80-bit format, with BigInt for mantissa representation
+ *  No support for math with subnormals or NaN
+ *  All operands and destinations must have the same precision (fconvert can change precision)
  */
+
 typedef struct
 {
     BigInt mantissa;
@@ -62,7 +67,8 @@ void floatWriteZero(Float* f);
 void fmul(Float* dst, Float* lhs, Float* rhs);
 void fadd(Float* dst, Float* lhs, Float* rhs);
 void fsub(Float* dst, Float* lhs, Float* rhs);
-bool fzero(Float* f);                               //is the float +-0?
-int compareFloatMagnitude(Float* lhs, Float* rhs);   //-1, 0, 1 resp. < = > (like strcmp)
+void fconvert(Float* dst, Float* src);              
+bool fzero(Float* f);                                   //is the float +-0?
+int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
 
 #endif

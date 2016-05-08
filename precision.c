@@ -341,10 +341,8 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
     //compare magnitudes (want lhs to be larger magnitude)
-    if(!(lhs->sign || rhs->sign))
-    {
-        //lhs, rhs positive
-    }
+    int magCmp = compareFloatMagnitude(lhs, rhs);
+
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)
@@ -363,7 +361,61 @@ bool fzero(Float* f)
     return true;
 }
 
-int fcmp(Float* lhs, Float* dst)
+int compareFloatMagnitude(Float* lhs, Float* rhs)
 {
+    //handle zero cases
+    bool lzero = fzero(lhs);
+    bool rzero = fzero(rhs);
+    if(lzero && rzero)
+        return 0;
+    if(lzero && !rzero)
+        return -1;
+    if(!lzero && rzero)
+        return 1;
+    //if exponents different, larger exponent always the larger value
+    //note that bias doesn't affect this comparison
+    if(lhs->expo < rhs->expo)
+        return -1;
+    if(lhs->expo > rhs->expo)
+        return 1;
+    //now compare mantissa word by word
+    for(int i = 0; i < lhs->mantissa.size; i++)
+    {
+        if(lhs->mantissa.val[i] < rhs->mantissa.val[i])
+            return -1;
+        else if(lhs->mantissa.val[i] > rhs->mantissa.val[i])
+            return 1;
+    }
+    //both exponent and mantissas identical
     return 0;
+}
+
+void fconvert(Float* lhs, Float* rhs)
+{
+    if(fzero(rhs))
+    {
+        floatWriteZero(lhs);
+        return;
+    }
+    //sign and expo copy directly
+    lhs->sign = rhs->sign;
+    lhs->expo = rhs->expo;
+    BigInt* lm = &lhs->mantissa;
+    BigInt* rm = &rhs->mantissa;
+    //copy as much of mantissa as possible
+    int copyWords = min(lm->size, rm->size);
+    for(int i = 0; i < copyWords; i++)
+        lm->val[i] = rm->val[i];
+    //if rhs has higher precision, round lhs to nearest
+    //round up iff the most significant bit not copied is 1
+    if(rm->size > lm->size && rm->val[lm->size] & (1ULL << 62))
+    {
+        biinc(lm);
+        //catch the rare event that lm overflows
+        if(lm->val[0] == 0)
+        {
+            lm->val[0] |= (1ULL << 62);
+            lhs->expo++;
+        }
+    }
 }
