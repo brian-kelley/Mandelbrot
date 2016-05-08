@@ -311,16 +311,19 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     for(int i = 0; i < words; i++)
         dst->mantissa.val[i] = bigDest.val[i];
     //2 cases here: highest bit of product is 0 or 1
-    if((bigDest.val[0] & (1ULL << 62)) == 0)
+    printf("after mul, high byte = %hhx\n", (u8) ((bigDest.val[0] & (0xFFULL << 56)) >> 56));
+    if((bigDest.val[0] & (1ULL << 61)) == 0)
     {
-        bishlOne(&dst->mantissa);
+        puts("Will shl because bit 61 is low.");
+        bishl(&dst->mantissa, 2);
         newExpo--;
         dst->mantissa.val[words - 1] |= (bigDest.val[words] & (1ULL << 62));
-        if(bigDest.val[words] & (1ULL << 61))
+        if(bigDest.val[1] & (1ULL << 60))
             biinc(&dst->mantissa);
     }
     else
     {
+        bishlOne(&dst->mantissa);
         if(bigDest.val[words] & (1ULL << 62))
             biinc(&dst->mantissa);
     }
