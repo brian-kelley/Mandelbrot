@@ -304,15 +304,7 @@ void getInterestingLocation(int depth, real minWidth)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    long double ld1 = 100.75;
-    Float f1 = floatLoad(1, ld1);
-    long double ld2 = 1.75;
-    Float f2 = floatLoad(1, ld2);
-    Float sum = FloatCtor(1);
-    fadd(&sum, &f1, &f2);
-    printf("%.20Lf + %.20Lf = %.20Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
-    return 0;
-    /*
+    // START TEST CODE HERE
     int location = ANY;
     for(int i = 1; i < argc; i++)
     {
@@ -323,7 +315,6 @@ int main(int argc, const char** argv)
         if(strcmp(argv[i], "dragon") == 0)
             location = DRAGON;
     }
-    */
     getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);

@@ -88,7 +88,7 @@ void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
         dst->val[i] = rhs->val[i];
     BigInt addend;
     addend.size = rhs->size;
-    addend.val = scratch;
+    addend.val = scratch + lhs->size;   //use different part of scratch than caller
     for(int i = 0; i < rhs->size; i++)
         addend.val[i] = rhs->val[i];
     biTwoComplement(&addend);
@@ -224,7 +224,7 @@ u64 biNthBit(BigInt* op, int n)
 
 void staticPrecInit(int maxPrec)
 {
-    scratch = (u64*) malloc(2 * maxPrec * sizeof(u64));
+    scratch = (u64*) malloc(3 * maxPrec * sizeof(u64));
 }
 
 Float FloatCtor(int prec)
@@ -349,41 +349,49 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
         Float* temp = lhs;
         lhs = rhs;
         rhs = temp;
-        puts("|lhs| < |rhs|");
     }
-    else
-        puts("|lhs| > |rhs|");
     //now |lhs| > |rhs| so can add rhs to lhs directly (after shifting to match expos)
     BigInt rhsAddend;
     rhsAddend.size = rhs->mantissa.size;
     rhsAddend.val = scratch;
-    //copy rhs mantissa and then shift to match exponents
+    //copy rhs mantissa to scratch and then shift to match exponents
     for(int i = 0; i < rhs->mantissa.size; i++)
         rhsAddend.val[i] = rhs->mantissa.val[i];
-    printf("lining up addends by shifting rhs right %i bits.\n", lhs->expo - rhs->expo);
     bishr(&rhsAddend, lhs->expo - rhs->expo);
-    //add the result directly into dst's mantissa
-    bool overflow = biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
     dst->expo = lhs->expo;
-    //dst exponent is same as lhs (will be incremented if add overflowed)
-    if(overflow)
+    if(lhs->sign != rhs->sign)
     {
-        bishr(&dst->mantissa, 1);
-        dst->mantissa.val[0] |= (1ULL << 62);
-        dst->expo++;
+        //subtract shifted rhs from lhs using 2s complement
+        bisub(&dst->mantissa, &lhs->mantissa, &rhsAddend);
+        printf("lhs mantissa: ");
+        biPrint(&lhs->mantissa);
+        printf("rhs addend mantissa: ");
+        biPrint(&rhsAddend);
+        printf("dst mantissa: ");
+        biPrint(&dst->mantissa);
+    }
+    else
+    {
+        //add rhs to lhs
+        biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
+        //dst exponent is same as lhs (will be incremented if add overflowed)
+        if((dst->mantissa.val[0] & (1ULL << 62)) == 0)
+        {
+            bishr(&dst->mantissa, 1);
+            dst->mantissa.val[0] |= (1ULL << 62);
+            dst->expo++;
+        }
     }
     //sum will always have the same sign as lhs
     dst->sign = lhs->sign;
-    printf("lhs mant: ");
-    biPrint(&lhs->mantissa);
-    printf("rhs mant: ");
-    biPrint(&rhs->mantissa);
-    printf("sum mant: ");
-    biPrint(&dst->mantissa);
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)
 {
+    bool savedSign = rhs->sign;
+    rhs->sign = !rhs->sign;
+    fadd(dst, lhs, rhs);
+    rhs->sign = savedSign;
 }
 
 bool fzero(Float* f)
