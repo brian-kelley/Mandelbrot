@@ -189,6 +189,7 @@ void drawBuf()
 {
     if(numThreads == 1)
     {
+        //directly run serial code; don't spawn a single worker thread
         for(int i = 0; i < winw; i++)
         {
             for(int j = 0; j < winh; j++)
@@ -303,20 +304,11 @@ void getInterestingLocation(int depth, real minWidth)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    BigInt f1 = BigIntCtor(4);
-    BigInt product = BigIntCtor(8);
-    //set f1 and product to 1
-    biinc(&f1);
-    biinc(&product);
-    for(int i = 1; i < 100; i++)
-    {
-        biinc(&f1);
-        BigInt temp = BigIntCtor(4);
-        for(int i = 0; i < 4; i++)
-            temp.val[i] = product.val[i + 4];
-        bimul(&product, &temp, &f1);
-        biPrint(&product);
-    }
+    long double test = 3141592653.493405340958093453093;
+    Float f = floatLoad(1, test); 
+    long double converted = getFloatVal(&f); 
+    printf("%.20Lf in\n", test);
+    printf("%.20Lf out\n", converted);
     return 0;
     /*
     int location = ANY;

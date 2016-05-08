@@ -7,6 +7,7 @@
 #ifndef PRECISION_H
 #define PRECISION_H
 
+typedef unsigned char u8;
 typedef unsigned long long u64;
 
 #define carryMask (1ULL << 63)
@@ -55,12 +56,13 @@ typedef struct
 
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);
+long double getFloatVal(Float* f);
 void FloatDtor(Float* f);
 void floatWriteZero(Float* f);
 void fmul(Float* dst, Float* lhs, Float* rhs);
 void fadd(Float* dst, Float* lhs, Float* rhs);
 void fsub(Float* dst, Float* lhs, Float* rhs);
 bool fzero(Float* f);                               //is the float +-0?
-int fcmp(Float* lhs, Float* rhs);   //-1, 0, 1 resp. < = > (like strcmp)
+int compareFloatMagnitude(Float* lhs, Float* rhs);   //-1, 0, 1 resp. < = > (like strcmp)
 
 #endif

@@ -236,22 +236,54 @@ Float FloatCtor(int prec)
     return f;
 }
 
-Float floatLoadDouble(int prec, long double d)
+void FloatDtor(Float* f)
+{
+    BigIntDtor(&f->mantissa);
+}
+
+Float floatLoad(int prec, long double d)
 {
     Float f = FloatCtor(prec);
     f.sign = d < 0;
     long double mant = frexpl(d, &f.expo);
     f.expo -= expoBias;
-    //take the lowest 
-    f.mantissa.val[0] = *((u64*) &mant) & 0x7FFFFFFFFFFFFFFF;
+    u8* mantBytes = (u8*) &mant;
+    u8* highWordBytes = (u8*) &f.mantissa.val[0];
+    //copy 64 bit mantissa. Byte order is LE in the long double and LE in the u64
+    for(int byteCount = 0; byteCount < 8; byteCount++)
+        highWordBytes[byteCount] = mantBytes[byteCount];
+    //shift the mantissa down 1 bit so the high word contains 63 significant bits
+    f.mantissa.val[0] &= digitMask;
+    bishr(&f.mantissa, 1);
+    f.mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high, but may be lost by bishl
     for(int i = 1; i < prec; i++)
         f.mantissa.val[i] = 0;
     return f;
 }
 
-void FloatDtor(Float* f)
+long double getFloatVal(Float* f)
 {
-    BigIntDtor(&f->mantissa);
+    int realExpo = f->expo + expoBias;
+    long double mant = 0;                   //this makes all bits 0
+    u8* mantBytes = (u8*) &mant;
+    u8* highWordBytes = (u8*) &scratch[0];
+    //add a biased 0 exponent to mant
+    //don't modify f, work from copy in scratch space
+    scratch[0] = f->mantissa.val[0];
+    scratch[0] <<= 1;
+    //lose highest digit for legal float?
+    if(f->mantissa.size > 1)
+    {
+        if(f->mantissa.val[1] & (1ULL << 62))
+            scratch[0]++;
+    }
+    *((short*) &mantBytes[8]) = 16382;      //this value is weird but it works
+    //copy mantissa 
+    for(int byteCount = 0; byteCount < 8; byteCount++)
+        mantBytes[byteCount] = highWordBytes[byteCount];
+    if(f->sign)
+        mant *= -1;
+    return ldexpl(mant, realExpo);
 }
 
 void floatWriteZero(Float* f)
