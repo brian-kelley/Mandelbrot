@@ -341,8 +341,45 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
     //compare magnitudes (want lhs to be larger magnitude)
+    //want lhs to be larger magnitude
+    //simply swap the pointers if rhs is bigger
     int magCmp = compareFloatMagnitude(lhs, rhs);
-
+    if(magCmp == -1)
+    {
+        Float* temp = lhs;
+        lhs = rhs;
+        rhs = temp;
+        puts("|lhs| < |rhs|");
+    }
+    else
+        puts("|lhs| > |rhs|");
+    //now |lhs| > |rhs| so can add rhs to lhs directly (after shifting to match expos)
+    BigInt rhsAddend;
+    rhsAddend.size = rhs->mantissa.size;
+    rhsAddend.val = scratch;
+    //copy rhs mantissa and then shift to match exponents
+    for(int i = 0; i < rhs->mantissa.size; i++)
+        rhsAddend.val[i] = rhs->mantissa.val[i];
+    printf("lining up addends by shifting rhs right %i bits.\n", lhs->expo - rhs->expo);
+    bishr(&rhsAddend, lhs->expo - rhs->expo);
+    //add the result directly into dst's mantissa
+    bool overflow = biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
+    dst->expo = lhs->expo;
+    //dst exponent is same as lhs (will be incremented if add overflowed)
+    if(overflow)
+    {
+        bishr(&dst->mantissa, 1);
+        dst->mantissa.val[0] |= (1ULL << 62);
+        dst->expo++;
+    }
+    //sum will always have the same sign as lhs
+    dst->sign = lhs->sign;
+    printf("lhs mant: ");
+    biPrint(&lhs->mantissa);
+    printf("rhs mant: ");
+    biPrint(&rhs->mantissa);
+    printf("sum mant: ");
+    biPrint(&dst->mantissa);
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)

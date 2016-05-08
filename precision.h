@@ -31,11 +31,11 @@ typedef struct
 BigInt BigIntCtor(int size);
 BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
-//dst must have twice the width of lhs and rhs
+//dst must have exactly twice the width of lhs and rhs
 void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
-bool biadd(BigInt* dst, BigInt* lhs, BigInt* rhs); 
+bool biadd(BigInt* dst, BigInt* lhs, BigInt* rhs);  //returns true if overflow 
 void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
 void biinc(BigInt* op);                             //increment, no overflow check
 void bishr(BigInt* op, int bits);

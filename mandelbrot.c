@@ -304,16 +304,13 @@ void getInterestingLocation(int depth, real minWidth)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    long double ld1 = 0.0000000000001; 
+    long double ld1 = 100.75;
     Float f1 = floatLoad(1, ld1);
-    long double ld2 = 1;
+    long double ld2 = 1.75;
     Float f2 = floatLoad(1, ld2);
-    Float prod = FloatCtor(1);
-    fmul(&prod, &f1, &f2);
-    printf("product mantissa: ");
-    biPrint(&prod.mantissa);
-    printf("high byte of mantissa: %hhx\n", (u8) ((prod.mantissa.val[0] & (0xFFULL << 56)) >> 56));
-    printf("%.20Lf * %.20Lf = %.20Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&prod));
+    Float sum = FloatCtor(1);
+    fadd(&sum, &f1, &f2);
+    printf("%.20Lf + %.20Lf = %.20Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
     return 0;
     /*
     int location = ANY;
