@@ -244,6 +244,11 @@ void FloatDtor(Float* f)
 Float floatLoad(int prec, long double d)
 {
     Float f = FloatCtor(prec);
+    if(d == 0)
+    {
+        floatWriteZero(&f);
+        return f;
+    }
     f.sign = d < 0;
     long double mant = frexpl(d, &f.expo);
     f.expo -= expoBias;
@@ -263,6 +268,8 @@ Float floatLoad(int prec, long double d)
 
 long double getFloatVal(Float* f)
 {
+    if(fzero(f))
+        return 0;
     int realExpo = f->expo + expoBias;
     long double mant = 0;                   //this makes all bits 0
     u8* mantBytes = (u8*) &mant;
