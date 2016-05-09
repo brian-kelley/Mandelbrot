@@ -1,52 +1,63 @@
-#include "stdint.h"
-#include "stdio.h"
-#include "stdlib.h"
-#include "math.h"
-#include "time.h"
-#include "pthread.h"
-#include "lodepng.h"
-#include "precision.h"
+#include "mandelbrot.h"
 
-#define max(a, b) (a < b ? b : a);
-#define min(a, b) (a < b ? a : b);
-
-typedef uint32_t Uint32;
-typedef long double real;
-
-typedef struct
-{
-    real r;
-    real i;
-} complex;
-real magSquared(complex* z) { return z->r * z->r + z->i * z->i; }
-
-enum Locations
-{
-    SEAHORSE,
-    ELEPHANT,
-    DRAGON,
-    ANY
-};
-
-#define winw 2560   
-#define winh 1600
-#define zoomFactor 1.5
-#define zoomRange 1.0
-#define numImages 150
-#define numColors 360
-#define totalIter (1 << 20)
-real screenX;
-real screenY;
-real width;
-real height;
+Float screenX;
+Float screenY;
+Float width;
+Float height;
+Float pstride;      //size of a pixel
+Float targetX;
+Float targetY;
+Float scratch1;     //to be used like registers by the convergence and zoom computationsa
+Float scratch2;
+Float scratch3;
+Float scratch4;
 Uint32* pixbuf;
 int* iterbuf;
 Uint32* colortable;
 int filecount;
 int numThreads;
 int maxiter;
-real targetX;
-real targetY;
+int prec;
+
+void initPositionVars()
+{
+    const long double startw = 4;
+    const long double starth = 4 * winh / winw;
+    screenX = floatLoad(1, -startw / 2);
+    screenY = floatLoad(1, -starth / 2);
+    width = floatLoad(1, startw);
+    height = floatLoad(1, starth);
+    pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
+}
+
+void initFloatScratch()
+{
+    scratch1 = FloatCtor(1);
+    scratch2 = FloatCtor(1);
+    scratch3 = FloatCtor(1);
+    scratch4 = FloatCtor(1);
+}
+
+#define INCR_PREC(f) \
+    f.mantissa.size++; \
+    f.mantissa.val = (u64*) realloc(&f.mantissa.val, (f.mantissa.size) * sizeof(u64));\
+    f.mantissa.val[f.mantissa.size - 1] = 0;
+
+void increasePrecision()
+{
+    //reallocate space for the persistent Float variables
+    //INCR_PREC macro copies significant words into reallocated space and updates mantissa size
+    INCR_PREC(screenX);
+    INCR_PREC(screenY);
+    INCR_PREC(width);
+    INCR_PREC(height);
+    INCR_PREC(pstride);
+    INCR_PREC(scratch1);
+    INCR_PREC(scratch2);
+    INCR_PREC(scratch3);
+    INCR_PREC(scratch4);
+    prec++;
+}
 
 void writeImage()
 {
@@ -62,6 +73,7 @@ void writeImage()
 
 void zoom()
 {
+    /*
     //get the highest (non-convergent) iteration count
     //in the middle 1/9 of window area
     int bestX = 0;
@@ -93,16 +105,27 @@ void zoom()
     screenY += dh * ((real) bestY / winh);
     width -= dw;
     height -= dh;
+    */
 }
 
 void zoomToTarget()
 {
     //should zoom towards exact center of the screen
     //choose the deepest pixel in a 4x4 area in the center of the view
-    width /= zoomFactor;
-    height /= zoomFactor;
-    screenX = targetX - width / 2;
-    screenY = targetY - height / 2;
+    Float sizeFactor = floatLoad(prec, 1 / zoomFactor);
+    fcopy(&scratch1, &width);
+    fmul(&width, &scratch1, &sizeFactor);
+    fcopy(&scratch1, &height);
+    fmul(&height, &scratch1, &sizeFactor);
+    fcopy(&scratch1, &pstride);
+    fmul(&pstride, &scratch1, &sizeFactor);
+    //width / 2 --> scratch1
+    fcopy(&scratch1, &width);
+    scratch1.expo--;
+    fsub(&screenX, &targetX, &scratch1);
+    fcopy(&scratch1, &height);
+    scratch1.expo--;
+    fsub(&screenY, &targetY, &scratch1);
 }
 
 void initColorTable()
@@ -126,17 +149,6 @@ void initColorTable()
     }
 }
 
-void initOldColorTable()
-{
-    for(int i = 0; i < numColors; i++)
-    {
-        int red = abs(((i) % 512 + 256) - 256);
-        int grn = abs((((i + 150) * 2) % 512) - 256);
-        int blu = abs(((i - grn) % 512) - 256);
-        colortable[i] = 0xFF000000 | red << 0 | grn << 8 | blu << 16;
-    }
-}
-
 Uint32 getColor(int num)
 {
     if(num == -1)
@@ -144,11 +156,9 @@ Uint32 getColor(int num)
     return colortable[num % numColors];
 }
 
-int getConvRate(complex* c)
+int getConvRate(Float* real, Float* imag)
 {
-    const real stop = 4;
     int iter = 0;
-    complex z = {0, 0};
     while(magSquared(&z) < stop)
     {
         complex temp;
@@ -170,13 +180,12 @@ void* workerFunc(void* indexAsInt)
 {
     int index = *((int*) indexAsInt);
     int colsPerThread = winw / numThreads;
-    for(int i = colsPerThread * index; i < colsPerThread * (index + 1); i++)
+    for(int i = 0; i < colsPerThread; i++)
     {
         for(int j = 0; j < winh; j++)
         {
-            real realPos = screenX + width * (real) i / winw;
+            Float realPos = screenX + width * (real) i / winw;
             real imagPos = screenY + height * (real) j / winh;
-            complex c = {realPos, imagPos};
             int convRate = getConvRate(&c);
             pixbuf[j * winw + i] = getColor(convRate);
             iterbuf[j * winw + i] = convRate;
@@ -190,6 +199,7 @@ void drawBuf()
     if(numThreads == 1)
     {
         //directly run serial code; don't spawn a single worker thread
+        
         for(int i = 0; i < winw; i++)
         {
             for(int j = 0; j < winh; j++)
@@ -305,16 +315,6 @@ int main(int argc, const char** argv)
 {
     staticPrecInit(100);
     // START TEST CODE HERE
-    int location = ANY;
-    for(int i = 1; i < argc; i++)
-    {
-        if(strcmp(argv[i], "seahorse") == 0)
-            location = SEAHORSE;
-        if(strcmp(argv[i], "elephant") == 0)
-            location = ELEPHANT;
-        if(strcmp(argv[i], "dragon") == 0)
-            location = DRAGON;
-    }
     getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);

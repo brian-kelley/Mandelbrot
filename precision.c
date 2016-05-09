@@ -244,26 +244,31 @@ void FloatDtor(Float* f)
 Float floatLoad(int prec, long double d)
 {
     Float f = FloatCtor(prec);
+    storeFloatVal(&f, d);
+    return f;
+}
+
+void storeFloatVal(Float* f, long double d)
+{
     if(d == 0)
     {
-        floatWriteZero(&f);
-        return f;
+        floatWriteZero(f);
+        return;
     }
-    f.sign = d < 0;
-    long double mant = frexpl(d, &f.expo);
-    f.expo -= expoBias;
+    f->sign = d < 0;
+    long double mant = frexpl(d, &f->expo);
+    f->expo -= expoBias;
     u8* mantBytes = (u8*) &mant;
-    u8* highWordBytes = (u8*) &f.mantissa.val[0];
+    u8* highWordBytes = (u8*) &f->mantissa.val[0];
     //copy 64 bit mantissa. Byte order is LE in the long double and LE in the u64
     for(int byteCount = 0; byteCount < 8; byteCount++)
         highWordBytes[byteCount] = mantBytes[byteCount];
     //shift the mantissa down 1 bit so the high word contains 63 significant bits
-    f.mantissa.val[0] &= digitMask;
-    bishr(&f.mantissa, 1);
-    f.mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high, but may be lost by bishl
-    for(int i = 1; i < prec; i++)
-        f.mantissa.val[i] = 0;
-    return f;
+    f->mantissa.val[0] &= digitMask;
+    bishr(&f->mantissa, 1);
+    f->mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high, but may be lost by bishl
+    for(int i = 1; i < f->mantissa.size; i++)
+        f->mantissa.val[i] = 0;
 }
 
 long double getFloatVal(Float* f)
@@ -463,4 +468,12 @@ void fconvert(Float* lhs, Float* rhs)
             lhs->expo++;
         }
     }
+}
+
+void fcopy(Float* dst, Float* src)
+{
+    dst->sign = src->sign;
+    dst->expo = src->expo;
+    for(int i = 0; i < src->mantissa.size; i++)
+        dst->mantissa.val[i] = src->mantissa.val[i];
 }

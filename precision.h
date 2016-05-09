@@ -61,13 +61,15 @@ typedef struct
 
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);
-long double getFloatVal(Float* f);
 void FloatDtor(Float* f);
+void storeFloatVal(Float* f, long double d);
+long double getFloatVal(Float* f);
 void floatWriteZero(Float* f);
 void fmul(Float* dst, Float* lhs, Float* rhs);
 void fadd(Float* dst, Float* lhs, Float* rhs);
 void fsub(Float* dst, Float* lhs, Float* rhs);
 void fconvert(Float* dst, Float* src);              
+void fcopy(Float* dst, Float* src);
 bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
 
