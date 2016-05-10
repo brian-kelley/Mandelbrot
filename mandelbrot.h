@@ -26,7 +26,6 @@ typedef uint32_t Uint32;
 void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)
 void initColorTable();      //compute the RGBA values and store in a static table
 void getInterestingLocation(int depth, int minExpo);
-void initFloatScratch();    //allocate space for some scratch "registers" to avoid lots of malloc/free
 
 /* High level main loop functions */
 void drawBuf();             //compute iteration count & color for every pixel in viewport
@@ -39,6 +38,5 @@ void zoomToTarget();        //do zoom step towards predetermined target (center 
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void* workerFunc(void* indexAsInt);         //pthread worker thread function
 int getConvRate(Float* real, Float* image); //actually iterate z = z^2 + c, return iteration count
-
 /* Currently unused functions */
 void zoom();                //do one zoom step (updates screenX, width, etc) towards "interesting" location

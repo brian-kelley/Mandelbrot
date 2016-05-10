@@ -7,10 +7,6 @@ Float height;
 Float pstride;      //size of a pixel
 Float targetX;
 Float targetY;
-Float scratch1;     //to be used like registers by the convergence and zoom computationsa
-Float scratch2;
-Float scratch3;
-Float scratch4;
 Uint32* pixbuf;
 int* iterbuf;
 Uint32* colortable;
@@ -30,14 +26,6 @@ void initPositionVars()
     pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
 }
 
-void initFloatScratch()
-{
-    scratch1 = FloatCtor(1);
-    scratch2 = FloatCtor(1);
-    scratch3 = FloatCtor(1);
-    scratch4 = FloatCtor(1);
-}
-
 #define INCR_PREC(f) \
     f.mantissa.size++; \
     f.mantissa.val = (u64*) realloc(&f.mantissa.val, (f.mantissa.size) * sizeof(u64));\
@@ -52,10 +40,6 @@ void increasePrecision()
     INCR_PREC(width);
     INCR_PREC(height);
     INCR_PREC(pstride);
-    INCR_PREC(scratch1);
-    INCR_PREC(scratch2);
-    INCR_PREC(scratch3);
-    INCR_PREC(scratch4);
     prec++;
 }
 
@@ -113,19 +97,20 @@ void zoomToTarget()
     //should zoom towards exact center of the screen
     //choose the deepest pixel in a 4x4 area in the center of the view
     Float sizeFactor = floatLoad(prec, 1 / zoomFactor);
-    fcopy(&scratch1, &width);
-    fmul(&width, &scratch1, &sizeFactor);
-    fcopy(&scratch1, &height);
-    fmul(&height, &scratch1, &sizeFactor);
-    fcopy(&scratch1, &pstride);
-    fmul(&pstride, &scratch1, &sizeFactor);
+    MAKE_STACK_FLOAT(temp);
+    fcopy(&temp, &width);
+    fmul(&width, &temp, &sizeFactor);
+    fcopy(&temp, &height);
+    fmul(&height, &temp, &sizeFactor);
+    fcopy(&temp, &pstride);
+    fmul(&pstride, &temp, &sizeFactor);
     //width / 2 --> scratch1
-    fcopy(&scratch1, &width);
-    scratch1.expo--;
-    fsub(&screenX, &targetX, &scratch1);
-    fcopy(&scratch1, &height);
-    scratch1.expo--;
-    fsub(&screenY, &targetY, &scratch1);
+    fcopy(&temp, &width);
+    temp.expo--;
+    fsub(&screenX, &targetX, &temp);
+    fcopy(&temp, &height);
+    temp.expo--;
+    fsub(&screenY, &targetY, &temp);
 }
 
 void initColorTable()
@@ -158,26 +143,38 @@ Uint32 getColor(int num)
 
 int getConvRate(Float* real, Float* imag)
 {
+    //real, imag make up "c" in z = z^2 + c
     int iter = 0;
-    while(magSquared(&z) < stop)
+    MAKE_STACK_FLOAT(zr); 
+    MAKE_STACK_FLOAT(zi); 
+    MAKE_STACK_FLOAT(zrsquare); 
+    MAKE_STACK_FLOAT(zisquare); 
+    MAKE_STACK_FLOAT(zri);
+    MAKE_STACK_FLOAT(zrtemp);
+    MAKE_STACK_FLOAT(zitemp);
+    MAKE_STACK_FLOAT(mag);
+    for(; iter < maxiter; iter++)
     {
-        complex temp;
-        //z = z^2 + c
-        temp.r = z.r * z.r - z.i * z.i + c->r;
-        temp.i = 2 * z.r * z.i + c->i;
-        z = temp;
-        iter++;
-        if(iter == maxiter)
-        {
-            //not diverging
+        fmul(&zrsquare, &zr, &zr);
+        fmul(&zisquare, &zi, &zi);
+        fadd(&mag, &zrsquare, &zisquare);
+        fmul(&zri, &zr, &zi);
+        if(zri.expo)
+            zri.expo++;
+        fsub(&zrtemp, &zrsquare, &zisquare);
+        fadd(&zr, &zrtemp, real);
+        fadd(&zi, &zri, imag);
+        //compare mag to 4.0
+        //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
+        if(2 - expoBias >= mag.expo)
             break;
-        }
     }
     return iter == maxiter ? -1 : iter;
 }
 
 void* workerFunc(void* indexAsInt)
 {
+    /*
     int index = *((int*) indexAsInt);
     int colsPerThread = winw / numThreads;
     for(int i = 0; i < colsPerThread; i++)
@@ -191,6 +188,7 @@ void* workerFunc(void* indexAsInt)
             iterbuf[j * winw + i] = convRate;
         }
     }
+    */
     return NULL;
 }
 
@@ -198,19 +196,24 @@ void drawBuf()
 {
     if(numThreads == 1)
     {
-        //directly run serial code; don't spawn a single worker thread
-        
+        //directly run serial code in main thread
+        MAKE_STACK_FLOAT(xiter);    //keep track of real, imag parts corresponding to pixel position
+        MAKE_STACK_FLOAT(yiter);
+        MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
+        fcopy(&xiter, &screenX);
         for(int i = 0; i < winw; i++)
         {
+            fcopy(&yiter, &screenY);
             for(int j = 0; j < winh; j++)
             {
-                real realPos = screenX + width * (real) i / winw;
-                real imagPos = screenY + height * (real) j / winh;
-                complex c = {realPos, imagPos};
-                int convRate = getConvRate(&c);
+                int convRate = getConvRate(&xiter, &yiter);
                 pixbuf[j * winw + i] = getColor(convRate);
                 iterbuf[j * winw + i] = convRate;
+                fcopy(&addtemp, &yiter);
+                fadd(&yiter, &addtemp, &pstride);
             }
+            fcopy(&addtemp, &xiter);
+            fadd(&xiter, &addtemp, &pstride);
         }
         return;
     }
@@ -246,8 +249,9 @@ void recomputeMaxIter()
     maxiter = avg + 2000;
 }
 
-void getInterestingLocation(int depth, real minWidth)
+void getInterestingLocation(int depth, int minExpo)
 {
+    /*
     //make a temporary iteration count buffer
     int pw = 30;    //pixel width
     int ph = 30;    //pixel height
@@ -309,25 +313,22 @@ void getInterestingLocation(int depth, real minWidth)
     printf("Will zoom towards %.10Lf, %.10Lf\n", x, y);
     targetX = x;
     targetY = y;
+    */
 }
 
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    // START TEST CODE HERE
-    getInterestingLocation(100, 1e-13);
+    //getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
-    width = 3.2;
-    height = 2;
-    screenX = targetX - width / 2;
-    screenY = targetY - height / 2;
+    initPositionVars();
     if(argc == 2)
         sscanf(argv[1], "%i", &numThreads);
     else
         numThreads = 4;
-    printf("Running on %i threads.\n", numThreads);
+    printf("Running on %i thread(s).\n", numThreads);
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
@@ -336,6 +337,7 @@ int main(int argc, const char** argv)
         time_t start = time(NULL);
         drawBuf();
         writeImage();
+        return 0;
         //zoom();
         zoomToTarget();
         recomputeMaxIter();

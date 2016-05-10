@@ -59,6 +59,11 @@ typedef struct
     bool sign;          //false = positive
 } Float;
 
+#define MAKE_STACK_FLOAT(name) \
+    Float name; \
+    name.mantissa.val = (u64*) alloca(prec * sizeof(u64)); \
+    name.mantissa.size = prec;
+
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);
 void FloatDtor(Float* f);
@@ -67,6 +72,7 @@ long double getFloatVal(Float* f);
 void floatWriteZero(Float* f);
 void fmul(Float* dst, Float* lhs, Float* rhs);
 void fadd(Float* dst, Float* lhs, Float* rhs);
+void faddip(Float* dst, Float* rhs);
 void fsub(Float* dst, Float* lhs, Float* rhs);
 void fconvert(Float* dst, Float* src);              
 void fcopy(Float* dst, Float* src);
