@@ -331,13 +331,13 @@ void getInterestingLocation(int depth, int minExpo)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    //fuzzTest();
+    fuzzTest();
     prec = 1;
-    Float f1 = floatLoad(1, 4);
-    Float f2 = floatLoad(1, 1);
+    Float f1 = floatLoad(1, 0.28);
+    Float f2 = floatLoad(1, 0.26);
     Float sum = FloatCtor(1);
     fadd(&sum, &f1, &f2);
-    printf("%Lf + %Lf = %Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
+    printf("%Lf + %Lf = %.30Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
     return 0;
     //getInterestingLocation(100, 1e-13);
     maxiter = 500;

@@ -372,17 +372,20 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     {
         //subtract shifted rhs from lhs using 2s complement
         bisub(&dst->mantissa, &lhs->mantissa, &rhsAddend);
+        int shifts = 0;
         while((dst->mantissa.val[0] & (1ULL << 62)) == 0)
         {
             bishlOne(&dst->mantissa);
             dst->expo--;
+            if(shifts++ > 63 * dst->mantissa.size)
+                break;
         }
     }
     else
     {
         //add rhs to lhs
-        biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
-        if((dst->mantissa.val[0] & (1ULL << 62)) == 0)
+        bool overflow = biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
+        if(overflow)
         {
             bishr(&dst->mantissa, 1);
             dst->mantissa.val[0] |= (1ULL << 62);
