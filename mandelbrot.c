@@ -145,28 +145,39 @@ int getConvRate(Float* real, Float* imag)
 {
     //real, imag make up "c" in z = z^2 + c
     int iter = 0;
-    MAKE_STACK_FLOAT(zr); 
-    MAKE_STACK_FLOAT(zi); 
-    MAKE_STACK_FLOAT(zrsquare); 
-    MAKE_STACK_FLOAT(zisquare); 
-    MAKE_STACK_FLOAT(zri);
-    MAKE_STACK_FLOAT(zrtemp);
-    MAKE_STACK_FLOAT(zitemp);
-    MAKE_STACK_FLOAT(mag);
+    u64* localbuf = (u64*) alloca(8 * prec * sizeof(u64));
+    MAKE_FLOAT(zr, &localbuf[prec * 0]);
+    storeFloatVal(&zr, 0);
+    MAKE_FLOAT(zi, &localbuf[prec * 1]);
+    storeFloatVal(&zi, 0);
+    MAKE_FLOAT(zrsquare, &localbuf[prec * 2]);
+    MAKE_FLOAT(zisquare, &localbuf[prec * 3]);
+    MAKE_FLOAT(zri, &localbuf[prec * 4]);
+    MAKE_FLOAT(zrtemp, &localbuf[prec * 5]);
+    MAKE_FLOAT(zitemp, &localbuf[prec * 6]);
+    MAKE_FLOAT(mag, &localbuf[prec * 7]);
     for(; iter < maxiter; iter++)
     {
+        //printf("Doing iter %i\n", iter);
+        //printf("zr = %LF\n", getFloatVal(&zr));
+        //printf("zi = %LF\n", getFloatVal(&zi));
         fmul(&zrsquare, &zr, &zr);
         fmul(&zisquare, &zi, &zi);
+        //printf("zrsquare = %Lf\n", getFloatVal(&zrsquare));
+        //printf("zisquare = %Lf\n", getFloatVal(&zisquare));
         fadd(&mag, &zrsquare, &zisquare);
+        //printf("mag = %Lf\n", getFloatVal(&mag));
         fmul(&zri, &zr, &zi);
-        if(zri.expo)
+        //printf("r*i = %Lf\n", getFloatVal(&zri));
+        if(zri.expo)            //multiply by 2
             zri.expo++;
         fsub(&zrtemp, &zrsquare, &zisquare);
+        //printf("zrtemp = %Lf\n", getFloatVal(&zrtemp));
         fadd(&zr, &zrtemp, real);
         fadd(&zi, &zri, imag);
         //compare mag to 4.0
         //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
-        if(2 - expoBias >= mag.expo)
+        if((long long) mag.expo - expoBias >= 2)
             break;
     }
     return iter == maxiter ? -1 : iter;
@@ -214,6 +225,7 @@ void drawBuf()
             }
             fcopy(&addtemp, &xiter);
             fadd(&xiter, &addtemp, &pstride);
+            printf("Computed column %i\n", i);
         }
         return;
     }
@@ -319,6 +331,14 @@ void getInterestingLocation(int depth, int minExpo)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
+    //fuzzTest();
+    prec = 1;
+    Float f1 = floatLoad(1, 4);
+    Float f2 = floatLoad(1, 1);
+    Float sum = FloatCtor(1);
+    fadd(&sum, &f1, &f2);
+    printf("%Lf + %Lf = %Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
+    return 0;
     //getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);

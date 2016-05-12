@@ -3,6 +3,7 @@
 #include "string.h"
 #include "stdbool.h"
 #include "stdio.h"
+#include "time.h"
 
 #ifndef PRECISION_H
 #define PRECISION_H
@@ -55,13 +56,18 @@ u64 biNthBit(BigInt* op, int n);
 typedef struct
 {
     BigInt mantissa;
-    int expo;
+    unsigned expo;
     bool sign;          //false = positive
 } Float;
 
 #define MAKE_STACK_FLOAT(name) \
     Float name; \
     name.mantissa.val = (u64*) alloca(prec * sizeof(u64)); \
+    name.mantissa.size = prec;
+
+#define MAKE_FLOAT(name, buf) \
+    Float name; \
+    name.mantissa.val = (u64*) buf; \
     name.mantissa.size = prec;
 
 Float FloatCtor(int prec);
@@ -78,5 +84,7 @@ void fconvert(Float* dst, Float* src);
 void fcopy(Float* dst, Float* src);
 bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
+
+void fuzzTest();
 
 #endif

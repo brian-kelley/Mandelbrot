@@ -12,8 +12,12 @@
 
 typedef uint32_t Uint32;
 
-#define winw 2560   
+#define winw 640
+#define winh 480
+/*
+#define winw 2560
 #define winh 1600
+*/
 #define zoomFactor 1.5
 #define zoomRange 1.0
 #define numImages 150

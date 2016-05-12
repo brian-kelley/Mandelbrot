@@ -256,8 +256,9 @@ void storeFloatVal(Float* f, long double d)
         return;
     }
     f->sign = d < 0;
-    long double mant = frexpl(d, &f->expo);
-    f->expo -= expoBias;
+    int expoTemp;
+    long double mant = frexpl(d, &expoTemp);
+    f->expo = (long long) expoTemp + expoBias;
     u8* mantBytes = (u8*) &mant;
     u8* highWordBytes = (u8*) &f->mantissa.val[0];
     //copy 64 bit mantissa. Byte order is LE in the long double and LE in the u64
@@ -275,7 +276,7 @@ long double getFloatVal(Float* f)
 {
     if(fzero(f))
         return 0;
-    int realExpo = f->expo + expoBias;
+    int realExpo = (long long) f->expo - expoBias;
     long double mant = 0;                   //this makes all bits 0
     u8* mantBytes = (u8*) &mant;
     u8* highWordBytes = (u8*) &scratch[0];
@@ -314,7 +315,7 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     }
     //get new exponent (no bias)
     const int words = dst->mantissa.size;
-    int newExpo = (lhs->expo + expoBias) + (rhs->expo + expoBias);
+    int newExpo = ((long long) lhs->expo - expoBias) + ((long long) rhs->expo - expoBias);
     BigInt bigDest;
     bigDest.val = scratch;
     bigDest.size = 2 * words;
@@ -323,10 +324,8 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     for(int i = 0; i < words; i++)
         dst->mantissa.val[i] = bigDest.val[i];
     //2 cases here: highest bit of product is 0 or 1
-    printf("after mul, high byte = %hhx\n", (u8) ((bigDest.val[0] & (0xFFULL << 56)) >> 56));
     if((bigDest.val[0] & (1ULL << 61)) == 0)
     {
-        puts("Will shl because bit 61 is low.");
         bishl(&dst->mantissa, 2);
         newExpo--;
         dst->mantissa.val[words - 1] |= (bigDest.val[words] & (1ULL << 62));
@@ -340,7 +339,7 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
             biinc(&dst->mantissa);
     }
     dst->sign = lhs->sign ^ rhs->sign;
-    dst->expo = newExpo - expoBias;
+    dst->expo = (long long) newExpo + expoBias;
 }
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
@@ -355,6 +354,11 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
         lhs = rhs;
         rhs = temp;
     }
+    if(fzero(rhs))
+    {
+        fcopy(dst, lhs);
+        return;
+    }
     //now |lhs| > |rhs| so can add rhs to lhs directly (after shifting to match expos)
     BigInt rhsAddend;
     rhsAddend.size = rhs->mantissa.size;
@@ -368,24 +372,29 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     {
         //subtract shifted rhs from lhs using 2s complement
         bisub(&dst->mantissa, &lhs->mantissa, &rhsAddend);
-        printf("lhs mantissa: ");
-        biPrint(&lhs->mantissa);
-        printf("rhs addend mantissa: ");
-        biPrint(&rhsAddend);
-        printf("dst mantissa: ");
-        biPrint(&dst->mantissa);
+        while((dst->mantissa.val[0] & (1ULL << 62)) == 0)
+        {
+            bishlOne(&dst->mantissa);
+            dst->expo--;
+        }
     }
     else
     {
         //add rhs to lhs
         biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
-        //dst exponent is same as lhs (will be incremented if add overflowed)
         if((dst->mantissa.val[0] & (1ULL << 62)) == 0)
         {
             bishr(&dst->mantissa, 1);
             dst->mantissa.val[0] |= (1ULL << 62);
             dst->expo++;
         }
+    }
+    //dst exponent is same as lhs (will be incremented if add overflowed)
+    if((dst->mantissa.val[0] & (1ULL << 62)) == 0)
+    {
+        bishr(&dst->mantissa, 1);
+        dst->mantissa.val[0] |= (1ULL << 62);
+        dst->expo++;
     }
     //sum will always have the same sign as lhs
     dst->sign = lhs->sign;
@@ -403,7 +412,7 @@ bool fzero(Float* f)
 {
     if(f->expo != 0)
         return false;
-    for(int i = 0; i < f->expo; i++)
+    for(int i = 0; i < f->mantissa.size; i++)
     {
         if(f->mantissa.val[i] != 0)
             return false;
@@ -476,4 +485,61 @@ void fcopy(Float* dst, Float* src)
     dst->expo = src->expo;
     for(int i = 0; i < src->mantissa.size; i++)
         dst->mantissa.val[i] = src->mantissa.val[i];
+}
+
+void fuzzTest()
+{
+    const long double tol = 1e-15;
+    srand(clock());
+    int prec = 1;
+    MAKE_STACK_FLOAT(op1);
+    MAKE_STACK_FLOAT(op2);
+    MAKE_STACK_FLOAT(sum);
+    MAKE_STACK_FLOAT(diff);
+    MAKE_STACK_FLOAT(prod);
+    u64 tested = 0;
+    while(true)
+    {
+        long double op[2];
+        for(int i = 0; i < 2; i++)
+        {
+            int ex = -40 + rand() % 80;
+            long double mant = (long double) 1.0 / RAND_MAX * rand();
+            if(rand() & 0x10)
+                mant *= -1;
+            op[i] = ldexpl(mant, ex);
+        }
+        storeFloatVal(&op1, op[0]);
+        storeFloatVal(&op2, op[1]);
+        fadd(&sum, &op1, &op2);
+        fsub(&diff, &op1, &op2);
+        fmul(&prod, &op1, &op2);
+        {
+            long double actual = op[0] + op[1];
+            if(fabsl((getFloatVal(&sum) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&sum));
+                return;
+            }
+        }
+        {
+            long double actual = op[0] - op[1];
+            if(fabsl((getFloatVal(&diff) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&diff));
+                return;
+            }
+        }
+        {
+            long double actual = op[0] * op[1];
+            if(fabsl((getFloatVal(&prod) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&prod));
+                return;
+            }
+        }
+//        if(tested++ % 10000 == 9999)
+        tested++;
+            printf("%llu operand combinations tested.\n", tested);
+    }
 }
