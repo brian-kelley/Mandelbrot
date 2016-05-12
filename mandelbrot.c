@@ -177,7 +177,36 @@ int getConvRate(Float* real, Float* imag)
         fadd(&zi, &zri, imag);
         //compare mag to 4.0
         //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
-        if((long long) mag.expo - expoBias >= 2)
+        if((long long) mag.expo - expoBias >= 3)
+            break;
+    }
+    return iter == maxiter ? -1 : iter;
+}
+
+int getConvRateLD(long double real, long double imag)
+{
+    //real, imag make up "c" in z = z^2 + c
+    int iter = 0;
+    long double zr = 0;
+    long double zi = 0;
+    for(; iter < maxiter; iter++)
+    {
+        //printf("Doing iter %i\n", iter);
+        //printf("zr = %LF\n", getFloatVal(&zr));
+        //printf("zi = %LF\n", getFloatVal(&zi));
+        long double zrsquare = zr * zr;
+        long double zisquare = zi * zi;
+        long double zri = zr * zi;
+        long double mag = zrsquare + zisquare;
+        zri *= 2;
+        long double zrtemp = zrsquare - zisquare;
+        zr = zrtemp + real;
+        zi = zri + imag;
+        //compare mag to 4.0
+        //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
+        int expo;
+        frexpl(mag, &expo);
+        if((long long) expo >= 3)
             break;
     }
     return iter == maxiter ? -1 : iter;
@@ -218,6 +247,7 @@ void drawBuf()
             for(int j = 0; j < winh; j++)
             {
                 int convRate = getConvRate(&xiter, &yiter);
+                //int convRate = getConvRateLD(getFloatVal(&xiter), getFloatVal(&yiter)); 
                 pixbuf[j * winw + i] = getColor(convRate);
                 iterbuf[j * winw + i] = convRate;
                 fcopy(&addtemp, &yiter);
@@ -331,14 +361,7 @@ void getInterestingLocation(int depth, int minExpo)
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
-    fuzzTest();
     prec = 1;
-    Float f1 = floatLoad(1, 0.28);
-    Float f2 = floatLoad(1, 0.26);
-    Float sum = FloatCtor(1);
-    fadd(&sum, &f1, &f2);
-    printf("%Lf + %Lf = %.30Lf\n", getFloatVal(&f1), getFloatVal(&f2), getFloatVal(&sum));
-    return 0;
     //getInterestingLocation(100, 1e-13);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);

@@ -41,6 +41,7 @@ void zoomToTarget();        //do zoom step towards predetermined target (center 
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void* workerFunc(void* indexAsInt);         //pthread worker thread function
-int getConvRate(Float* real, Float* image); //actually iterate z = z^2 + c, return iteration count
+int getConvRate(Float* real, Float* imag); //actually iterate z = z^2 + c, return iteration count
+int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
 /* Currently unused functions */
 void zoom();                //do one zoom step (updates screenX, width, etc) towards "interesting" location

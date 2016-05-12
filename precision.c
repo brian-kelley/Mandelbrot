@@ -541,8 +541,7 @@ void fuzzTest()
                 return;
             }
         }
-//        if(tested++ % 10000 == 9999)
-        tested++;
+        if(tested++ % 1000000 == 999999)
             printf("%llu operand combinations tested.\n", tested);
     }
 }
