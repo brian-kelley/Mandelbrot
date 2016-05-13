@@ -484,9 +484,10 @@ void fconvert(Float* lhs, Float* rhs)
 
 void fcopy(Float* dst, Float* src)
 {
+    int wordsToCopy = min(dst->mantissa.size, src->mantissa.size);
     dst->sign = src->sign;
     dst->expo = src->expo;
-    for(int i = 0; i < src->mantissa.size; i++)
+    for(int i = 0; i < wordsToCopy; i++)
         dst->mantissa.val[i] = src->mantissa.val[i];
 }
 
@@ -544,4 +545,24 @@ void fuzzTest()
         if(tested++ % 1000000 == 999999)
             printf("%llu operand combinations tested.\n", tested);
     }
+}
+
+//Float IO: precision, sign, expo, mantissa words
+Float floadRead(FILE* file)
+{
+    int prec;
+    fread(&prec, sizeof(int), 1, file);
+    Float f = FloatCtor(prec);
+    fread(&f.sign, sizeof(bool), 1, file);
+    fread(&f.expo, sizeof(unsigned), 1, file);
+    fread(f.mantissa.val, sizeof(u64), prec, file);
+    return f;
+}
+
+void floatWrite(Float* f, FILE* file)
+{
+    fwrite(&f->mantissa.size, sizeof(int), 1, file);
+    fwrite(&f->sign, sizeof(bool), 1, file);
+    fwrite(&f->expo, sizeof(unsigned), 1, file);
+    fwrite(f->mantissa.val, sizeof(u64), f->mantissa.size, file);
 }

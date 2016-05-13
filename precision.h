@@ -75,6 +75,16 @@ typedef struct
     name.mantissa.val = (u64*) buf; \
     name.mantissa.size = prec;
 
+#define INCR_PREC(f) \
+    f.mantissa.size++; \
+    f.mantissa.val = (u64*) realloc(f.mantissa.val, (f.mantissa.size) * sizeof(u64));\
+    f.mantissa.val[f.mantissa.size - 1] = 0;
+
+#define CHANGE_PREC(f, newPrec) \
+    f.mantissa.size = newPrec; \
+    f.mantissa.val = (u64*) realloc(f.mantissa.val, newPrec * sizeof(u64)); \
+    f.mantissa.val[f.mantissa.size - 1] = 0;
+
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);
 void FloatDtor(Float* f);
@@ -89,6 +99,8 @@ void fconvert(Float* dst, Float* src);
 void fcopy(Float* dst, Float* src);
 bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
+Float floadRead(FILE* file);
+void floatWrite(Float* f, FILE* file);
 
 void fuzzTest();
 

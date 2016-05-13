@@ -29,7 +29,7 @@ typedef uint32_t Uint32;
 /* Initialization functions */
 void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)
 void initColorTable();      //compute the RGBA values and store in a static table
-void getInterestingLocation(int depth, int minExpo);
+void getInterestingLocation(int minExpo);
 
 /* High level main loop functions */
 void drawBuf();             //compute iteration count & color for every pixel in viewport

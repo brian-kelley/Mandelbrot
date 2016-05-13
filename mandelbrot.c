@@ -26,11 +26,6 @@ void initPositionVars()
     pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
 }
 
-#define INCR_PREC(f) \
-    f.mantissa.size++; \
-    f.mantissa.val = (u64*) realloc(&f.mantissa.val, (f.mantissa.size) * sizeof(u64));\
-    f.mantissa.val[f.mantissa.size - 1] = 0;
-
 void increasePrecision()
 {
     //reallocate space for the persistent Float variables
@@ -96,8 +91,9 @@ void zoomToTarget()
 {
     //should zoom towards exact center of the screen
     //choose the deepest pixel in a 4x4 area in the center of the view
-    Float sizeFactor = floatLoad(prec, 1 / zoomFactor);
+    MAKE_STACK_FLOAT(sizeFactor);
     MAKE_STACK_FLOAT(temp);
+    storeFloatVal(&sizeFactor, 1.0 / zoomFactor);
     fcopy(&temp, &width);
     fmul(&width, &temp, &sizeFactor);
     fcopy(&temp, &height);
@@ -214,21 +210,32 @@ int getConvRateLD(long double real, long double imag)
 
 void* workerFunc(void* indexAsInt)
 {
-    /*
-    int index = *((int*) indexAsInt);
-    int colsPerThread = winw / numThreads;
-    for(int i = 0; i < colsPerThread; i++)
+    int numPixels = winw / numThreads;
+    MAKE_STACK_FLOAT(index);
+    MAKE_STACK_FLOAT(lowx);
+    MAKE_STACK_FLOAT(xiter);    //keep track of real, imag parts corresponding to pixel position
+    MAKE_STACK_FLOAT(yiter);
+    MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
+    MAKE_STACK_FLOAT(fpixelStart);
+    storeFloatVal(&index, *((int*) indexAsInt));
+    storeFloatVal(&fpixelStart, numPixels);
+    fmul(&lowx, &pstride, &fpixelStart);
+    fadd(&xiter, &screenX, &lowx);
+    for(int i = 0; i < numPixels; i++)
     {
+        fcopy(&yiter, &screenY);
         for(int j = 0; j < winh; j++)
         {
-            Float realPos = screenX + width * (real) i / winw;
-            real imagPos = screenY + height * (real) j / winh;
-            int convRate = getConvRate(&c);
+            int convRate = getConvRate(&xiter, &yiter);
+            //int convRate = getConvRateLD(getFloatVal(&xiter), getFloatVal(&yiter)); 
             pixbuf[j * winw + i] = getColor(convRate);
             iterbuf[j * winw + i] = convRate;
+            fcopy(&addtemp, &yiter);
+            fadd(&yiter, &addtemp, &pstride);
         }
+        fcopy(&addtemp, &xiter);
+        fadd(&xiter, &addtemp, &pstride);
     }
-    */
     return NULL;
 }
 
@@ -255,7 +262,6 @@ void drawBuf()
             }
             fcopy(&addtemp, &xiter);
             fadd(&xiter, &addtemp, &pstride);
-            printf("Computed column %i\n", i);
         }
         return;
     }
@@ -266,7 +272,7 @@ void drawBuf()
         indices[i] = i;
         if(pthread_create(&threads[i], NULL, workerFunc, indices + i))
         {
-            puts("Failed to create thread.");
+            puts("Fatal error: Failed to create thread.");
             exit(EXIT_FAILURE);
         }
     }
@@ -291,7 +297,7 @@ void recomputeMaxIter()
     maxiter = avg + 2000;
 }
 
-void getInterestingLocation(int depth, int minExpo)
+void getInterestingLocation(int minExpo)
 {
     //make a temporary iteration count buffer
     int gilPrec = 1;
@@ -302,67 +308,104 @@ void getInterestingLocation(int depth, int minExpo)
     Float gpstride = floatLoad(1, initViewport / gpx);
     int* escapeTimes = (int*) malloc(sizeof(int) * gpx * gpx);
     int zoomExpo = 3;               //log_2 of zoom factor 
-    maxiter = 50;
-    MAKE_STACK_FLOAT_PREC(xiter, 1);
-    MAKE_STACK_FLOAT_PREC(yiter, 1);
-    MAKE_STACK_FLOAT_PREC(width, 1);
-    while(depth > 0 && (long long) pstride.expo - expoBias >= minExpo)
+    Float lowx = FloatCtor(1);
+    Float lowy = FloatCtor(1);
+    Float xiter = FloatCtor(1);
+    Float yiter = FloatCtor(1);
+    Float width = FloatCtor(1);
+    Float temp = FloatCtor(1);
+    Float fbestPX = FloatCtor(1);
+    Float fbestPY = FloatCtor(1);
+    maxiter = 200;
+    while((long long) gpstride.expo - expoBias >= minExpo)
     {
         //compute viewport / 2 ("width")
         fcopy(&width, &gpstride);
         width.expo += 4;            //multiply by 16 (half of gpx)
-        fsub(&xiter, &x, &width);
+        fsub(&lowx, &x, &width);
+        fcopy(&xiter, &lowx);
+        fsub(&lowy, &y, &width);
         for(int r = 0; r < gpx; r++)
         {
-            fsub(&yiter, &y, &width);
+            fcopy(&yiter, &lowy);
             for(int i = 0; i < gpx; i++)
             {
                 escapeTimes[r + i * gpx] = getConvRate(&xiter, &yiter);
+                fcopy(&temp, &yiter);
+                fadd(&yiter, &temp, &gpstride);
             }
-
+            fcopy(&temp, &xiter);
+            fadd(&xiter, &temp, &gpstride);
         }
         int bestPX;
         int bestPY;
         int bestIters = 0;
-        for(int i = 0; i < pw; i++)
+        u64 itersum = 0;
+        for(int i = 0; i < gpx; i++)
         {
-            for(int j = 0; j < ph; j++)
+            for(int j = 0; j < gpx; j++)
             {
-                if(escapeTimes[i + j * pw] > bestIters)
+                itersum = escapeTimes[i + j * gpx];
+                if(escapeTimes[i + j * gpx] > bestIters)
                 {
                     bestPX = i;
                     bestPY = j;
-                    bestIters = escapeTimes[i + j * pw];
+                    bestIters = escapeTimes[i + j * gpx];
                 }
             }
         }
+        itersum /= (gpx * gpx); //compute average iter count
+        maxiter = (itersum * 2 + bestIters) / 3 + 200;
         if(bestIters == 0)
         {
             puts("getInterestingLocation() stuck on window of converging points!");
-            printf("Window width is %Le\n", w);
+            printf("Window width is %Le\n", getFloatVal(&width));
             puts("Decrease zoom factor or increase resolution.");
             break;
         }
         maxiter = bestIters + 100;
-        bestPX -= pw / 2;   //center the pixel position
-        bestPY -= ph / 2;
-        x += xstep * bestPX;
-        y += ystep * bestPY;
-        w /= quickzoom;
-        h /= quickzoom;
-        depth--;
+        storeFloatVal(&fbestPX, bestPX);
+        storeFloatVal(&fbestPY, bestPY);
+        fmul(&temp, &gpstride, &fbestPX);
+        fadd(&x, &lowx, &temp);
+        fmul(&temp, &gpstride, &fbestPY);
+        fadd(&y, &lowy, &temp);
+        //update gpstride by changing only exponent
+        gpstride.expo -= zoomExpo;
+        if(gilPrec < getPrec((long long) gpstride.expo - expoBias))
+        {
+            INCR_PREC(x);
+            INCR_PREC(y);
+            INCR_PREC(xiter);
+            INCR_PREC(yiter);
+            INCR_PREC(gpstride);
+            INCR_PREC(temp);
+            INCR_PREC(lowx);
+            INCR_PREC(lowy);
+            INCR_PREC(fbestPX);
+            INCR_PREC(fbestPY);
+            INCR_PREC(width);
+            gilPrec++;
+        }
     }
     free(escapeTimes);
-    printf("Will zoom towards %.10Lf, %.10Lf\n", x, y);
-    targetX = x;
-    targetY = y;
+    printf("Will zoom towards %.20Lf, %.20Lf\n", getFloatVal(&x), getFloatVal(&y));
+    CHANGE_PREC(targetX, gilPrec);
+    CHANGE_PREC(targetY, gilPrec);
+    fcopy(&targetX, &x);
+    fcopy(&targetY, &y);
+}
+
+int getPrec(int expo)
+{
+    return -expo / 80;
 }
 
 int main(int argc, const char** argv)
 {
     staticPrecInit(100);
     prec = 1;
-    //getInterestingLocation(100, 1e-13);
+    getInterestingLocation(-200);
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
@@ -375,18 +418,23 @@ int main(int argc, const char** argv)
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
+    puts("Ready to produce images.");
     for(int i = 0; i < 150; i++)
     {
         time_t start = time(NULL);
         drawBuf();
         writeImage();
-        return 0;
         //zoom();
         zoomToTarget();
         recomputeMaxIter();
         if(maxiter > totalIter)
             maxiter = totalIter;
         int timeDiff = time(NULL) - start;
+        if(getPrec(pstride.expo) > prec)
+        {
+            increasePrecision();
+            printf("*** Increasing precision to %i bits. ***\n", 63 * prec);
+        }
         printf("Generated image #%4i in %6i seconds.\n", filecount - 1, timeDiff);
     }
     free(iterbuf);
