@@ -293,32 +293,33 @@ void recomputeMaxIter()
 
 void getInterestingLocation(int depth, int minExpo)
 {
-    /*
     //make a temporary iteration count buffer
-    int pw = 30;    //pixel width
-    int ph = 30;    //pixel height
-    real x = 0;
-    real y = 0;
-    real w = 2;
-    real h = 2;
-    int* escapeTimes = (int*) malloc(sizeof(int) * pw * ph);
-    real quickzoom = 20;
+    int gilPrec = 1;
+    int gpx = 32;                       //size, in pixels, of GIL iteration buffer (must be PoT)
+    long double initViewport = 4;
+    Float x = floatLoad(1, 0);          //real, imag of view center
+    Float y = floatLoad(1, 0);
+    Float gpstride = floatLoad(1, initViewport / gpx);
+    int* escapeTimes = (int*) malloc(sizeof(int) * gpx * gpx);
+    int zoomExpo = 3;               //log_2 of zoom factor 
     maxiter = 50;
-    while(depth > 0 && w >= minWidth)
+    MAKE_STACK_FLOAT_PREC(xiter, 1);
+    MAKE_STACK_FLOAT_PREC(yiter, 1);
+    MAKE_STACK_FLOAT_PREC(width, 1);
+    while(depth > 0 && (long long) pstride.expo - expoBias >= minExpo)
     {
-        real xstep = w / pw;
-        real ystep = h / ph;
-        real ystart = y - h / 2;
-        complex iter = {x - w / 2, ystart};
-        for(int px = 0; px < pw; px++)
+        //compute viewport / 2 ("width")
+        fcopy(&width, &gpstride);
+        width.expo += 4;            //multiply by 16 (half of gpx)
+        fsub(&xiter, &x, &width);
+        for(int r = 0; r < gpx; r++)
         {
-            iter.i = ystart;
-            for(int py = 0; py < ph; py++)
+            fsub(&yiter, &y, &width);
+            for(int i = 0; i < gpx; i++)
             {
-                escapeTimes[px + py * pw] = getConvRate(&iter);
-                iter.i += ystep;
+                escapeTimes[r + i * gpx] = getConvRate(&xiter, &yiter);
             }
-            iter.r += xstep;
+
         }
         int bestPX;
         int bestPY;
@@ -355,7 +356,6 @@ void getInterestingLocation(int depth, int minExpo)
     printf("Will zoom towards %.10Lf, %.10Lf\n", x, y);
     targetX = x;
     targetY = y;
-    */
 }
 
 int main(int argc, const char** argv)

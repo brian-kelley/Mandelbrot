@@ -65,6 +65,11 @@ typedef struct
     name.mantissa.val = (u64*) alloca(prec * sizeof(u64)); \
     name.mantissa.size = prec;
 
+#define MAKE_STACK_FLOAT_PREC(name, prec) \
+    Float name; \
+    name.mantissa.val = (u64*) alloca(prec * sizeof(u64)); \
+    name.mantissa.size = prec;
+
 #define MAKE_FLOAT(name, buf) \
     Float name; \
     name.mantissa.val = (u64*) buf; \

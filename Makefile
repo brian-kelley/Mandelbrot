@@ -1,5 +1,5 @@
 CFLAGS=-std=c99 -O3 -ffast-math
-FASTCFLAGS=-std=c99
+FASTCFLAGS=-std=c99 -Oz
 
 all:
 	nasm -f macho64 routines.asm -o build/routines.o 
