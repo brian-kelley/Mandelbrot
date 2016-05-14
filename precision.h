@@ -15,8 +15,8 @@ typedef unsigned long long u64;
 #define digitMask (~carryMask)
 #define expoBias (0x7FFFFFFF)  //this value is subtracted from actual exponent
 
-#define max(a, b) (a < b ? b : a);
-#define min(a, b) (a < b ? a : b);
+#define max(a, b) (a < b ? b : a)
+#define min(a, b) (a < b ? a : b)
 
 //routine implemented in asm
 extern void longmul(u64 f1, u64 f2, u64* phi, u64* plo);

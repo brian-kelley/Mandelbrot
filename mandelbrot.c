@@ -46,45 +46,9 @@ void writeImage()
     lodepng_encode32_file(name, (unsigned char*) pixbuf, winw, winh);
 }
 
-void zoom()
-{
-    /*
-    //get the highest (non-convergent) iteration count
-    //in the middle 1/9 of window area
-    int bestX = 0;
-    int bestY = 0;
-    int bestIter = 0;
-    int xStart = winw * (1 - zoomRange) / 2;
-    int yStart = winh * (1 - zoomRange) / 2;
-    int xRange = winw * zoomRange;
-    int yRange = winh * zoomRange;
-    for(int i = xStart; i < xStart + xRange; i++)
-    {
-        for(int j = yStart; j < yStart + yRange; j++)
-        {
-            if(iterbuf[i + j * winw] > bestIter)
-            {
-                bestX = i;
-                bestY = j;
-                bestIter = iterbuf[i + j * winw];
-            }
-        }
-    }
-    printf("Deepest pixel has %i iters.\n", bestIter);
-    //now zoom to (bestX, bestY)
-    //zoom in by factor of 1.5
-    //get the decrease in width and height
-    real dw = width * (1 - 1 / zoomFactor);
-    real dh = height * (1 - 1 / zoomFactor);
-    screenX += dw * ((real) bestX / winw);
-    screenY += dh * ((real) bestY / winh);
-    width -= dw;
-    height -= dh;
-    */
-}
-
 void zoomToTarget()
 {
+    pstride.expo--;
     //update pixel stride
     MAKE_STACK_FLOAT(sizeFactor);
     MAKE_STACK_FLOAT(temp);
@@ -231,7 +195,8 @@ void* workerFunc(void* unused)
         fcopy(&yiter, &screenY);
         for(int ypix = 0; ypix < winh; ypix++)
         {
-            int convRate = getConvRate(&x, &yiter);
+            //int convRate = getConvRate(&x, &yiter);
+            int convRate = getConvRateLD(getFloatVal(&x), getFloatVal(&yiter));
             pixbuf[ypix * winw + xpix] = getColor(convRate);
             iterbuf[ypix * winw + xpix] = convRate;
             fcopy(&addtemp, &yiter);
@@ -285,7 +250,7 @@ void recomputeMaxIter()
         numColored++;
     }
     double avg = (double) total / numColored;
-    maxiter = avg + 2000;
+    maxiter = avg + 300;
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -321,6 +286,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     maxiter = 200;
     while((long long) gpstride.expo - expoBias >= minExpo)
     {
+        printf("current pixel stride = %.10Le\n", getFloatVal(&gpstride));
         //compute viewport / 2 ("width")
         fcopy(&width, &gpstride);
         width.expo += 4;            //multiply by 16 (half of gpx)
@@ -392,6 +358,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     }
     free(escapeTimes);
     //do not lose any precision when storing targetX, targetY
+    puts("Saving target position.");
     CHANGE_PREC(targetX, gilPrec);
     CHANGE_PREC(targetY, gilPrec);
     fcopy(&targetX, &x);
@@ -452,6 +419,7 @@ int main(int argc, const char** argv)
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
     initPositionVars();
+    computeScreenPos();     //get initial screenX, screenY
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
@@ -463,15 +431,16 @@ int main(int argc, const char** argv)
         //zoom();
         zoomToTarget();
         recomputeMaxIter();
-        if(maxiter > totalIter)
-            maxiter = totalIter;
         int timeDiff = time(NULL) - start;
         if(getPrec(pstride.expo) > prec)
         {
             increasePrecision();
             printf("*** Increasing precision to %i bits. ***\n", 63 * prec);
         }
-        printf("Generated image #%4i in %6i seconds.\n", filecount - 1, timeDiff);
+        printf("Generated image #%i in %i seconds. (", filecount - 1, timeDiff); 
+        if(timeDiff == 0)
+            putchar('>');
+        printf("%i pixels per second.\n", winw * winh / max(timeDiff, 1));
     }
     free(iterbuf);
     free(pixbuf);

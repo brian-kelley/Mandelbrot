@@ -7,14 +7,11 @@
 #include "lodepng.h"
 #include "precision.h"
 
-#define max(a, b) (a < b ? b : a);
-#define min(a, b) (a < b ? a : b);
-
 typedef uint32_t Uint32;
 
-#define winw 2560
-#define winh 1600
-#define deepestExpo -1000
+#define winw 640
+#define winh 400
+#define deepestExpo -300
 #define zoomFactor 2
 #define numColors 360
 #define totalIter (1 << 20)
@@ -39,6 +36,3 @@ void* workerFunc(void*);         //pthread worker thread function
 int getConvRate(Float* real, Float* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
 int getPrec(int zoomExpo);                  //get the Float precision required to handle a pixel stride with expo zoomExpo
-
-/* Currently unused functions */
-void zoom();                //do one zoom step (updates screenX, width, etc) towards "interesting" location
