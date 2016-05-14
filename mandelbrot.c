@@ -240,16 +240,12 @@ void recomputeMaxIter()
     const int normalIncrease = 30;
     const int boost = 50;
     int numPixels = winw * winh;
-    unsigned long long total = 0;
     int numColored = 0;
     int numMax = 0;
     for(int i = 0; i < numPixels; i++)
     {
         if(iterbuf[i] != -1)
-        {
-            total += iterbuf[i];
             numColored++;
-        }
         if(iterbuf[i] == maxiter)
             numMax++;
     }
@@ -261,8 +257,6 @@ void recomputeMaxIter()
         maxiter += numBoosts * boost;
     }
     maxiter += normalIncrease;
-    double avg = (double) total / numColored;
-    printf("avg = %f\n", avg);
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
