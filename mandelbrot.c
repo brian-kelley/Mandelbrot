@@ -83,7 +83,7 @@ void initColorTable()
 {
     for(int i = 0; i < numColors; i++)
     {
-        int t = (i * 2) % 360;
+        int t = ((i + 70) * 3) % 360;
         int r = 0;
         int g = 0;
         int b = 0;
