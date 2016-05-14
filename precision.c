@@ -302,6 +302,10 @@ void floatWriteZero(Float* f)
 
 void fmul(Float* dst, Float* lhs, Float* rhs)
 {
+#ifdef DEBUG
+    if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
+        puts("fmul parameters have non-matching precision!");
+#endif
     if(fzero(lhs) || fzero(rhs))
     {
         floatWriteZero(dst);
@@ -338,6 +342,10 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
+#ifdef DEBUG
+    if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
+        puts("fadd/fsub parameters have non-matching precision!");
+#endif
     //compare magnitudes (want lhs to be larger magnitude)
     //want lhs to be larger magnitude
     //simply swap the pointers if rhs is bigger

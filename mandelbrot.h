@@ -1,3 +1,4 @@
+#define DEBUG
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -9,8 +10,6 @@
 
 typedef uint32_t Uint32;
 
-#define winw 640
-#define winh 400
 #define deepestExpo -1000
 #define zoomFactor 2
 #define numColors 360
