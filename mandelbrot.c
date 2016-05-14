@@ -83,7 +83,7 @@ void initColorTable()
 {
     for(int i = 0; i < numColors; i++)
     {
-        int t = (i * 5) % 360;
+        int t = (i * 2) % 360;
         int r = 0;
         int g = 0;
         int b = 0;
@@ -237,17 +237,32 @@ void drawBuf()
 
 void recomputeMaxIter()
 {
+    const int normalIncrease = 30;
+    const int boost = 50;
     int numPixels = winw * winh;
     unsigned long long total = 0;
     int numColored = 0;
+    int numMax = 0;
     for(int i = 0; i < numPixels; i++)
     {
         if(iterbuf[i] != -1)
-        total += iterbuf[i];
-        numColored++;
+        {
+            total += iterbuf[i];
+            numColored++;
+        }
+        if(iterbuf[i] == maxiter)
+            numMax++;
     }
+    numMax /= numColored;
+    int numBoosts = numMax / (numColored * 0.01);
+    if(numBoosts)
+    {
+        printf("Boosting iteration count by %i\n", boost * numBoosts);
+        maxiter += numBoosts * boost;
+    }
+    maxiter += normalIncrease;
     double avg = (double) total / numColored;
-    maxiter = avg + 400;
+    printf("avg = %f\n", avg);
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -279,7 +294,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     Float halfSize = floatLoad(1, gpx / 2);
     storeFloatVal(&screenX, 0);
     storeFloatVal(&screenY, 0);
-    maxiter = 200;
+    maxiter = 50;
     while((long long) pstride.expo - expoBias >= minExpo)
     {
         printf("Pixel stride = %.10Le\n", getFloatVal(&pstride));
@@ -315,7 +330,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             puts("Decrease zoom factor or increase resolution.");
             break;
         }
-        maxiter = bestIters + 100;
+        recomputeMaxIter();
         storeFloatVal(&fbestPX, bestPX);
         storeFloatVal(&fbestPY, bestPY);
         //set screenX/screenY to location of best pixel
@@ -412,7 +427,7 @@ int main(int argc, const char** argv)
     winh = imageHeight;
     initPositionVars();
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
-    maxiter = 200;
+    maxiter = 50;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
     computeScreenPos();     //get initial screenX, screenY
