@@ -12,18 +12,12 @@
 
 typedef uint32_t Uint32;
 
-#define winw 640
-#define winh 480
-/*
 #define winw 2560
 #define winh 1600
-*/
-#define zoomFactor 1.5
-#define zoomRange 1.0
-#define numImages 150
+#define deepestExpo -1000
+#define zoomFactor 2
 #define numColors 360
 #define totalIter (1 << 20)
-#define MAX_PREC 100
 #define iterStop (2.0 * 2.0)    //the square of the magnitude where mandelbrot iterations stop
 
 /* Initialization functions */
@@ -41,7 +35,7 @@ void computeScreenPos();    //set screenX, screenY based on pstride, targetX, ta
 
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
-void* workerFunc(void* indexAsInt);         //pthread worker thread function
+void* workerFunc(void*);         //pthread worker thread function
 int getConvRate(Float* real, Float* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
 int getPrec(int zoomExpo);                  //get the Float precision required to handle a pixel stride with expo zoomExpo

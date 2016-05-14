@@ -12,6 +12,8 @@ int filecount;
 int numThreads;
 int maxiter;
 int prec;
+int workCol;
+pthread_mutex_t workColMutex;
 
 void initPositionVars()
 {
@@ -206,32 +208,35 @@ int getConvRateLD(long double real, long double imag)
     return iter == maxiter ? -1 : iter;
 }
 
-void* workerFunc(void* indexAsInt)
+void* workerFunc(void* unused)
 {
-    int numPixels = winw / numThreads;
-    int startPixels = *((int*) indexAsInt) * numPixels;
-    MAKE_STACK_FLOAT(startPixelsFloat);
-    MAKE_STACK_FLOAT(lowx);
-    MAKE_STACK_FLOAT(xiter);    //keep track of real, imag parts corresponding to pixel position
+    MAKE_STACK_FLOAT(xpixFloat);
+    MAKE_STACK_FLOAT(x);
     MAKE_STACK_FLOAT(yiter);
     MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
-    //only pstride requires arbitrary precision
-    storeFloatVal(&startPixelsFloat, startPixels);
-    fmul(&lowx, &pstride, &startPixelsFloat);
-    fadd(&xiter, &screenX, &lowx);
-    for(int i = startPixels; i < numPixels + startPixels; i++)
+    while(true)
     {
+        //Fetch and increment the current work column
+        int xpix;
+        pthread_mutex_lock(&workColMutex);
+        xpix = workCol++;
+        pthread_mutex_unlock(&workColMutex);
+        //if all work has been completed, quit and wait to be joined with main thread
+        if(xpix >= winw)
+            return NULL;
+        //Otherwise, compute the pixels for column xpix
+        storeFloatVal(&xpixFloat, xpix);
+        fmul(&addtemp, &pstride, &xpixFloat);
+        fadd(&x, &screenX, &addtemp);
         fcopy(&yiter, &screenY);
-        for(int j = 0; j < winh; j++)
+        for(int ypix = 0; ypix < winh; ypix++)
         {
-            int convRate = getConvRate(&xiter, &yiter);
-            pixbuf[j * winw + i] = getColor(convRate);
-            iterbuf[j * winw + i] = convRate;
+            int convRate = getConvRate(&x, &yiter);
+            pixbuf[ypix * winw + xpix] = getColor(convRate);
+            iterbuf[ypix * winw + xpix] = convRate;
             fcopy(&addtemp, &yiter);
             fadd(&yiter, &addtemp, &pstride);
         }
-        fcopy(&addtemp, &xiter);
-        fadd(&xiter, &addtemp, &pstride);
     }
     return NULL;
 }
@@ -243,6 +248,12 @@ void drawBuf()
         int index = 0;
         workerFunc(&index);
         return;
+    }
+    workCol = 0;
+    if(pthread_mutex_init(&workColMutex, NULL))
+    {
+        puts("Failed to create mutex.");
+        exit(EXIT_FAILURE);
     }
     pthread_t* threads = (pthread_t*) malloc(sizeof(pthread_t) * numThreads);
     int* indices = (int*) malloc(sizeof(int) * numThreads);
@@ -257,6 +268,7 @@ void drawBuf()
     }
     for(int i = 0; i < numThreads; i++)
         pthread_join(threads[i], NULL);
+    pthread_mutex_destroy(&workColMutex);
     free(indices);
     free(threads);
 }
@@ -434,7 +446,7 @@ int main(int argc, const char** argv)
     prec = 1;
     targetX = FloatCtor(1);
     targetY = FloatCtor(1);
-    getInterestingLocation(-200, targetCache, useTargetCache);
+    getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
@@ -443,7 +455,7 @@ int main(int argc, const char** argv)
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
-    for(int i = 0; i < 150; i++)
+    while((long long) pstride.expo - expoBias >= deepestExpo)
     {
         time_t start = time(NULL);
         drawBuf();
