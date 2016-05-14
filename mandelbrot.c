@@ -270,8 +270,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         return;
     }
     //make a temporary iteration count buffer
-    int gilPrec = 1;
     int gpx = 32;                       //size, in pixels, of GIL iteration buffer (must be PoT)
+    prec = 1;
     long double initViewport = 4;
     Float x = floatLoad(1, 0);          //real, imag of view center
     Float y = floatLoad(1, 0);
@@ -343,7 +343,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         fadd(&y, &lowy, &temp);
         //update gpstride by changing only exponent
         gpstride.expo -= zoomExpo;
-        if(gilPrec < getPrec((long long) gpstride.expo - expoBias))
+        if(prec < getPrec((long long) gpstride.expo - expoBias))
         {
             INCR_PREC(x);
             INCR_PREC(y);
@@ -356,14 +356,14 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             INCR_PREC(fbestPX);
             INCR_PREC(fbestPY);
             INCR_PREC(width);
-            gilPrec++;
+            prec++;
         }
     }
     free(escapeTimes);
     //do not lose any precision when storing targetX, targetY
     puts("Saving target position.");
-    CHANGE_PREC(targetX, gilPrec);
-    CHANGE_PREC(targetY, gilPrec);
+    CHANGE_PREC(targetX, prec);
+    CHANGE_PREC(targetY, prec);
     fcopy(&targetX, &x);
     fcopy(&targetY, &y);
     if(cacheFile)
@@ -374,6 +374,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         floatWrite(&targetY, cache);
         fclose(cache);
     }
+    FloatDtor(&x);
+    FloatDtor(&y);
     FloatDtor(&lowx);
     FloatDtor(&lowy);
     FloatDtor(&xiter);
@@ -413,11 +415,11 @@ int main(int argc, const char** argv)
         printf("Will read target location from \"%s\"\n", targetCache);
     else if(targetCache)
         printf("Will write target location to \"%s\"\n", targetCache);
-    prec = 1;
     targetX = FloatCtor(1);
     targetY = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
+    prec = 1;
     maxiter = 200;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
