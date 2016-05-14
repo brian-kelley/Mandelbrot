@@ -48,7 +48,6 @@ void writeImage()
 
 void zoomToTarget()
 {
-    pstride.expo--;
     //update pixel stride
     MAKE_STACK_FLOAT(sizeFactor);
     MAKE_STACK_FLOAT(temp);
@@ -63,14 +62,19 @@ void computeScreenPos()
     MAKE_STACK_FLOAT(pixWidth);
     MAKE_STACK_FLOAT(pixHeight);
     MAKE_STACK_FLOAT(temp);
+    //need copies of targetX, targetY with matching precision
+    MAKE_STACK_FLOAT(targetXlocal);
+    MAKE_STACK_FLOAT(targetYlocal);
+    fcopy(&targetXlocal, &targetX);
+    fcopy(&targetYlocal, &targetY);
     storeFloatVal(&pixWidth, winw);
     storeFloatVal(&pixHeight, winh);
     pixWidth.expo--;
     pixHeight.expo--;
     fmul(&temp, &pstride, &pixWidth);
-    fsub(&screenX, &targetX, &temp);
+    fsub(&screenX, &targetXlocal, &temp);
     fmul(&temp, &pstride, &pixHeight);
-    fsub(&screenY, &targetY, &temp);
+    fsub(&screenY, &targetYlocal, &temp);
 }
 
 void initColorTable()
@@ -137,7 +141,7 @@ int getConvRate(Float* real, Float* imag)
         fadd(&zi, &zri, imag);
         //compare mag to 4.0
         //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
-        if((long long) mag.expo - expoBias >= 3)
+        if((long long) mag.expo - expoBias > 2)
             break;
     }
     return iter == maxiter ? -1 : iter;
@@ -195,8 +199,7 @@ void* workerFunc(void* unused)
         fcopy(&yiter, &screenY);
         for(int ypix = 0; ypix < winh; ypix++)
         {
-            //int convRate = getConvRate(&x, &yiter);
-            int convRate = getConvRateLD(getFloatVal(&x), getFloatVal(&yiter));
+            int convRate = getConvRate(&x, &yiter);
             pixbuf[ypix * winw + xpix] = getColor(convRate);
             iterbuf[ypix * winw + xpix] = convRate;
             fcopy(&addtemp, &yiter);
@@ -250,7 +253,7 @@ void recomputeMaxIter()
         numColored++;
     }
     double avg = (double) total / numColored;
-    maxiter = avg + 300;
+    maxiter = avg + 400;
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -415,7 +418,7 @@ int main(int argc, const char** argv)
     targetY = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
-    maxiter = 500;
+    maxiter = 200;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
     initPositionVars();
@@ -428,7 +431,6 @@ int main(int argc, const char** argv)
         time_t start = time(NULL);
         drawBuf();
         writeImage();
-        //zoom();
         zoomToTarget();
         recomputeMaxIter();
         int timeDiff = time(NULL) - start;
@@ -440,7 +442,7 @@ int main(int argc, const char** argv)
         printf("Generated image #%i in %i seconds. (", filecount - 1, timeDiff); 
         if(timeDiff == 0)
             putchar('>');
-        printf("%i pixels per second.\n", winw * winh / max(timeDiff, 1));
+        printf("%i pixels per second)\n", winw * winh / max(timeDiff, 1));
     }
     free(iterbuf);
     free(pixbuf);
