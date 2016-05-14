@@ -29,7 +29,7 @@ typedef uint32_t Uint32;
 /* Initialization functions */
 void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)
 void initColorTable();      //compute the RGBA values and store in a static table
-void getInterestingLocation(int minExpo);
+void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 
 /* High level main loop functions */
 void drawBuf();             //compute iteration count & color for every pixel in viewport
@@ -37,6 +37,7 @@ void writeImage();          //use lodePNG to write out the current conv-rate buf
 void increasePrecision();   //increment the precision of persistent Float values
 void recomputeMaxIter();    //update iteration cap between zooms
 void zoomToTarget();        //do zoom step towards predetermined target (center doesn't move)
+void computeScreenPos();    //set screenX, screenY based on pstride, targetX, targetY
 
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel

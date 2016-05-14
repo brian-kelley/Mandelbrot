@@ -18,8 +18,6 @@ typedef unsigned long long u64;
 #define max(a, b) (a < b ? b : a);
 #define min(a, b) (a < b ? a : b);
 
-void staticPrecInit(int maxPrec);   //allocate math scratch space
-
 //routine implemented in asm
 extern void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
 
@@ -99,7 +97,7 @@ void fconvert(Float* dst, Float* src);
 void fcopy(Float* dst, Float* src);
 bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
-Float floadRead(FILE* file);
+Float floatRead(FILE* file);
 void floatWrite(Float* f, FILE* file);
 
 void fuzzTest();

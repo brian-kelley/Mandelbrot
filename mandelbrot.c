@@ -2,8 +2,6 @@
 
 Float screenX;
 Float screenY;
-Float width;
-Float height;
 Float pstride;      //size of a pixel
 Float targetX;
 Float targetY;
@@ -18,12 +16,10 @@ int prec;
 void initPositionVars()
 {
     const long double startw = 4;
-    const long double starth = 4 * winh / winw;
-    screenX = floatLoad(1, -startw / 2);
-    screenY = floatLoad(1, -starth / 2);
-    width = floatLoad(1, startw);
-    height = floatLoad(1, starth);
+    screenX = FloatCtor(1);
+    screenY = FloatCtor(1);
     pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
+    computeScreenPos();
 }
 
 void increasePrecision()
@@ -32,8 +28,6 @@ void increasePrecision()
     //INCR_PREC macro copies significant words into reallocated space and updates mantissa size
     INCR_PREC(screenX);
     INCR_PREC(screenY);
-    INCR_PREC(width);
-    INCR_PREC(height);
     INCR_PREC(pstride);
     prec++;
 }
@@ -89,23 +83,27 @@ void zoom()
 
 void zoomToTarget()
 {
-    //should zoom towards exact center of the screen
-    //choose the deepest pixel in a 4x4 area in the center of the view
+    //update pixel stride
     MAKE_STACK_FLOAT(sizeFactor);
     MAKE_STACK_FLOAT(temp);
     storeFloatVal(&sizeFactor, 1.0 / zoomFactor);
-    fcopy(&temp, &width);
-    fmul(&width, &temp, &sizeFactor);
-    fcopy(&temp, &height);
-    fmul(&height, &temp, &sizeFactor);
     fcopy(&temp, &pstride);
     fmul(&pstride, &temp, &sizeFactor);
-    //width / 2 --> scratch1
-    fcopy(&temp, &width);
-    temp.expo--;
+    computeScreenPos();
+}
+
+void computeScreenPos()
+{
+    MAKE_STACK_FLOAT(pixWidth);
+    MAKE_STACK_FLOAT(pixHeight);
+    MAKE_STACK_FLOAT(temp);
+    storeFloatVal(&pixWidth, winw);
+    storeFloatVal(&pixHeight, winh);
+    pixWidth.expo--;
+    pixHeight.expo--;
+    fmul(&temp, &pstride, &pixWidth);
     fsub(&screenX, &targetX, &temp);
-    fcopy(&temp, &height);
-    temp.expo--;
+    fmul(&temp, &pstride, &pixHeight);
     fsub(&screenY, &targetY, &temp);
 }
 
@@ -211,23 +209,22 @@ int getConvRateLD(long double real, long double imag)
 void* workerFunc(void* indexAsInt)
 {
     int numPixels = winw / numThreads;
-    MAKE_STACK_FLOAT(index);
+    int startPixels = *((int*) indexAsInt) * numPixels;
+    MAKE_STACK_FLOAT(startPixelsFloat);
     MAKE_STACK_FLOAT(lowx);
     MAKE_STACK_FLOAT(xiter);    //keep track of real, imag parts corresponding to pixel position
     MAKE_STACK_FLOAT(yiter);
     MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
-    MAKE_STACK_FLOAT(fpixelStart);
-    storeFloatVal(&index, *((int*) indexAsInt));
-    storeFloatVal(&fpixelStart, numPixels);
-    fmul(&lowx, &pstride, &fpixelStart);
+    //only pstride requires arbitrary precision
+    storeFloatVal(&startPixelsFloat, startPixels);
+    fmul(&lowx, &pstride, &startPixelsFloat);
     fadd(&xiter, &screenX, &lowx);
-    for(int i = 0; i < numPixels; i++)
+    for(int i = startPixels; i < numPixels + startPixels; i++)
     {
         fcopy(&yiter, &screenY);
         for(int j = 0; j < winh; j++)
         {
             int convRate = getConvRate(&xiter, &yiter);
-            //int convRate = getConvRateLD(getFloatVal(&xiter), getFloatVal(&yiter)); 
             pixbuf[j * winw + i] = getColor(convRate);
             iterbuf[j * winw + i] = convRate;
             fcopy(&addtemp, &yiter);
@@ -243,26 +240,8 @@ void drawBuf()
 {
     if(numThreads == 1)
     {
-        //directly run serial code in main thread
-        MAKE_STACK_FLOAT(xiter);    //keep track of real, imag parts corresponding to pixel position
-        MAKE_STACK_FLOAT(yiter);
-        MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
-        fcopy(&xiter, &screenX);
-        for(int i = 0; i < winw; i++)
-        {
-            fcopy(&yiter, &screenY);
-            for(int j = 0; j < winh; j++)
-            {
-                int convRate = getConvRate(&xiter, &yiter);
-                //int convRate = getConvRateLD(getFloatVal(&xiter), getFloatVal(&yiter)); 
-                pixbuf[j * winw + i] = getColor(convRate);
-                iterbuf[j * winw + i] = convRate;
-                fcopy(&addtemp, &yiter);
-                fadd(&yiter, &addtemp, &pstride);
-            }
-            fcopy(&addtemp, &xiter);
-            fadd(&xiter, &addtemp, &pstride);
-        }
+        int index = 0;
+        workerFunc(&index);
         return;
     }
     pthread_t* threads = (pthread_t*) malloc(sizeof(pthread_t) * numThreads);
@@ -297,8 +276,19 @@ void recomputeMaxIter()
     maxiter = avg + 2000;
 }
 
-void getInterestingLocation(int minExpo)
+void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 {
+    FILE* cache = NULL;
+    if(cacheFile && useCache)
+    {
+        cache = fopen(cacheFile, "r");
+        FloatDtor(&targetX);
+        FloatDtor(&targetY);
+        targetX = floatRead(cache);
+        targetY = floatRead(cache);
+        fclose(cache);
+        return;
+    }
     //make a temporary iteration count buffer
     int gilPrec = 1;
     int gpx = 32;                       //size, in pixels, of GIL iteration buffer (must be PoT)
@@ -389,11 +379,28 @@ void getInterestingLocation(int minExpo)
         }
     }
     free(escapeTimes);
-    printf("Will zoom towards %.20Lf, %.20Lf\n", getFloatVal(&x), getFloatVal(&y));
+    //do not lose any precision when storing targetX, targetY
     CHANGE_PREC(targetX, gilPrec);
     CHANGE_PREC(targetY, gilPrec);
     fcopy(&targetX, &x);
     fcopy(&targetY, &y);
+    if(cacheFile)
+    {
+        cache = fopen(cacheFile, "w");
+        //write targetX, targetY to the cache file
+        floatWrite(&targetX, cache);
+        floatWrite(&targetY, cache);
+        fclose(cache);
+    }
+    FloatDtor(&lowx);
+    FloatDtor(&lowy);
+    FloatDtor(&xiter);
+    FloatDtor(&yiter);
+    FloatDtor(&gpstride);
+    FloatDtor(&width);
+    FloatDtor(&temp);
+    FloatDtor(&fbestPX);
+    FloatDtor(&fbestPY);
 }
 
 int getPrec(int expo)
@@ -403,22 +410,39 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    staticPrecInit(100);
+    //Process cli arguments first
+    const char* targetCache = NULL;
+    bool useTargetCache = false;
+    numThreads = 1;
+    for(int i = 1; i < argc; i++)
+    {
+        if(strcmp(argv[i], "-n") == 0)
+        {
+            //# of threads is next
+            sscanf(argv[++i], "%i", &numThreads);
+        }
+        else if(strcmp(argv[i], "--targetcache") == 0)
+            targetCache = argv[++i];
+        else if(strcmp(argv[i], "--usetargetcache") == 0)
+            useTargetCache = true;
+    }
+    printf("Running on %i thread(s).\n", numThreads);
+    if(targetCache && useTargetCache)
+        printf("Will read target location from \"%s\"\n", targetCache);
+    else if(targetCache)
+        printf("Will write target location to \"%s\"\n", targetCache);
     prec = 1;
-    getInterestingLocation(-200);
+    targetX = FloatCtor(1);
+    targetY = FloatCtor(1);
+    getInterestingLocation(-200, targetCache, useTargetCache);
+    printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
     initColorTable();
     initPositionVars();
-    if(argc == 2)
-        sscanf(argv[1], "%i", &numThreads);
-    else
-        numThreads = 4;
-    printf("Running on %i thread(s).\n", numThreads);
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
-    puts("Ready to produce images.");
     for(int i = 0; i < 150; i++)
     {
         time_t start = time(NULL);

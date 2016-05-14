@@ -1,7 +1,5 @@
 #include "precision.h"
 
-static u64* scratch;
-
 BigInt BigIntCtor(int size)
 {
     BigInt rv;
@@ -88,7 +86,7 @@ void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
         dst->val[i] = rhs->val[i];
     BigInt addend;
     addend.size = rhs->size;
-    addend.val = scratch + lhs->size;   //use different part of scratch than caller
+    addend.val = (u64*) alloca(lhs->size * sizeof(u64));
     for(int i = 0; i < rhs->size; i++)
         addend.val[i] = rhs->val[i];
     biTwoComplement(&addend);
@@ -222,11 +220,6 @@ u64 biNthBit(BigInt* op, int n)
     return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
 }
 
-void staticPrecInit(int maxPrec)
-{
-    scratch = (u64*) malloc(3 * maxPrec * sizeof(u64));
-}
-
 Float FloatCtor(int prec)
 {
     Float f;
@@ -278,17 +271,18 @@ long double getFloatVal(Float* f)
         return 0;
     int realExpo = (long long) f->expo - expoBias;
     long double mant = 0;                   //this makes all bits 0
+    u64 highWord;
     u8* mantBytes = (u8*) &mant;
-    u8* highWordBytes = (u8*) &scratch[0];
+    u8* highWordBytes = (u8*) &highWord;
     //add a biased 0 exponent to mant
     //don't modify f, work from copy in scratch space
-    scratch[0] = f->mantissa.val[0];
-    scratch[0] <<= 1;
+    highWord = f->mantissa.val[0];
+    highWord <<= 1;
     //lose highest digit for legal float?
     if(f->mantissa.size > 1)
     {
         if(f->mantissa.val[1] & (1ULL << 62))
-            scratch[0]++;
+            highWord++;
     }
     *((short*) &mantBytes[8]) = 16382;      //this value is weird but it works
     //copy mantissa 
@@ -317,7 +311,7 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     const int words = dst->mantissa.size;
     int newExpo = ((long long) lhs->expo - expoBias) + ((long long) rhs->expo - expoBias);
     BigInt bigDest;
-    bigDest.val = scratch;
+    bigDest.val = (u64*) alloca(2 * words * sizeof(u64));
     bigDest.size = 2 * words;
     bimul(&bigDest, &lhs->mantissa, &rhs->mantissa);
     //copy high words into dst's mantissa
@@ -362,7 +356,7 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     //now |lhs| > |rhs| so can add rhs to lhs directly (after shifting to match expos)
     BigInt rhsAddend;
     rhsAddend.size = rhs->mantissa.size;
-    rhsAddend.val = scratch;
+    rhsAddend.val = (u64*) alloca(lhs->mantissa.size * sizeof(u64));
     //copy rhs mantissa to scratch and then shift to match exponents
     for(int i = 0; i < rhs->mantissa.size; i++)
         rhsAddend.val[i] = rhs->mantissa.val[i];
@@ -548,7 +542,7 @@ void fuzzTest()
 }
 
 //Float IO: precision, sign, expo, mantissa words
-Float floadRead(FILE* file)
+Float floatRead(FILE* file)
 {
     int prec;
     fread(&prec, sizeof(int), 1, file);
