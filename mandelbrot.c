@@ -323,7 +323,21 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         if(bestIters == 0)
         {
             puts("getInterestingLocation() got stuck on window of converging points!");
-            puts("Decrease zoom factor or increase resolution.");
+            break;
+        }
+        bool allSame = true;
+        int val = iterbuf[0];
+        for(int i = 0; i < winw * winh; i++)
+        {
+            if(iterbuf[i] != val)
+            {
+                allSame = false;
+                break;
+            }
+        }
+        if(allSame)
+        {
+            puts("getInterestingLocation() frame contains all the same iteration count!");
             break;
         }
         recomputeMaxIter();
