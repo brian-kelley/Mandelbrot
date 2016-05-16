@@ -290,7 +290,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     Float halfSize = floatLoad(1, gpx / 2);
     storeFloatVal(&screenX, 0);
     storeFloatVal(&screenY, 0);
-    maxiter = 50;
+    maxiter = 100;
     while((long long) pstride.expo - expoBias >= minExpo)
     {
         printf("Pixel stride = %.10Le\n", getFloatVal(&pstride));
