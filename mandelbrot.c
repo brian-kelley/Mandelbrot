@@ -53,9 +53,7 @@ void zoomToTarget()
     //update pixel stride
     MAKE_STACK_FLOAT(sizeFactor);
     MAKE_STACK_FLOAT(temp);
-    storeFloatVal(&sizeFactor, 1.0 / zoomFactor);
-    fcopy(&temp, &pstride);
-    fmul(&pstride, &temp, &sizeFactor);
+    pstride.expo--;     //hard-code the 2x zoom factor
     computeScreenPos();
 }
 
@@ -81,9 +79,9 @@ void computeScreenPos()
 
 void initColorTable()
 {
-    for(int i = 0; i < numColors; i++)
+    for(int i = 0; i < 360; i++)
     {
-        int t = ((i + 70) * 3) % 360;
+        int t = (i * 2 + 240) % 360;
         int r = 0;
         int g = 0;
         int b = 0;
@@ -104,7 +102,11 @@ Uint32 getColor(int num)
 {
     if(num == -1)
         return 0xFF000000;                  //in the mandelbrot set = opaque black
-    return colortable[num % numColors];
+    //make a steeper gradient for the first few iterations (better image 0)
+    int steepCutoff = 50;
+    if(num <= steepCutoff)
+        return colortable[(num * 3) % 360];
+    return colortable[((num - steepCutoff) + 3 * steepCutoff) % 360];
 }
 
 int getConvRate(Float* real, Float* imag)
@@ -237,7 +239,7 @@ void drawBuf()
 
 void recomputeMaxIter()
 {
-    const int normalIncrease = 30;
+    const int normalIncrease = 20;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -368,7 +370,16 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 int getPrec(int expo)
 {
-    return -expo / 80;
+    return -expo / 50;
+}
+
+void saveResumeState(const char* fname)
+{
+}
+
+void loadResumeState(const char* fname)
+{
+
 }
 
 int main(int argc, const char** argv)
@@ -378,10 +389,11 @@ int main(int argc, const char** argv)
     const char* targetCache = NULL;
     bool useTargetCache = false;
     numThreads = 1;
-    const int defaultWidth = 2560;
-    const int defaultHeight = 1600;
+    const int defaultWidth = 640;
+    const int defaultHeight = 480;
     int imageWidth = defaultWidth;
     int imageHeight = defaultHeight;
+    const char* resumeFile = NULL;
     for(int i = 1; i < argc; i++)
     {
         if(strcmp(argv[i], "-n") == 0)
@@ -402,6 +414,8 @@ int main(int argc, const char** argv)
                 imageHeight = defaultHeight;
             }
         }
+        else if(strcmp(argv[i], "--resume") == 0)
+            resumeFile = argv[++i];
     }
     printf("Running on %i thread(s).\n", numThreads);
     if(targetCache && useTargetCache)
@@ -421,13 +435,14 @@ int main(int argc, const char** argv)
     winh = imageHeight;
     initPositionVars();
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
-    maxiter = 50;
-    colortable = (Uint32*) malloc(sizeof(Uint32) * numColors);
+    maxiter = 100;
+    colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     computeScreenPos();     //get initial screenX, screenY
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
+    //resume file: filecount, last maxiter, prec
     while((long long) pstride.expo - expoBias >= deepestExpo)
     {
         time_t start = time(NULL);

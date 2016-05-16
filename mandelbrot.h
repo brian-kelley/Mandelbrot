@@ -11,10 +11,6 @@
 typedef uint32_t Uint32;
 
 #define deepestExpo -1000
-#define zoomFactor 2
-#define numColors 360
-#define totalIter (1 << 20)
-#define iterStop (2.0 * 2.0)    //the square of the magnitude where mandelbrot iterations stop
 
 /* Initialization functions */
 void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)
@@ -28,6 +24,8 @@ void increasePrecision();   //increment the precision of persistent Float values
 void recomputeMaxIter();    //update iteration cap between zooms
 void zoomToTarget();        //do zoom step towards predetermined target (center doesn't move)
 void computeScreenPos();    //set screenX, screenY based on pstride, targetX, targetY
+void saveResumeState(const char* fname);
+void loadResumeState(const char* fname);
 
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
