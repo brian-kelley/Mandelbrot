@@ -32,4 +32,4 @@ Uint32 getColor(int num);   //lookup color corresponding to the iteration count 
 void* workerFunc(void*);         //pthread worker thread function
 int getConvRate(Float* real, Float* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
-int getPrec(int zoomExpo);                  //get the Float precision required to handle a pixel stride with expo zoomExpo
+int getPrec(int zoomExpo);  //get the precision level required (pass raw biased value)

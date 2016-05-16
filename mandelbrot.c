@@ -370,7 +370,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 int getPrec(int expo)
 {
-    return -expo / 50;
+    double unbiased = (long long) expo - expoBias;
+    return ceil(-unbiased / 50);
 }
 
 void saveResumeState(const char* fname)
@@ -427,6 +428,7 @@ int main(int argc, const char** argv)
     screenY = FloatCtor(1);
     pstride = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+    //Testing multiprecision
     prec = 1;
     CHANGE_PREC(screenX, 1);
     CHANGE_PREC(screenY, 1);
@@ -454,7 +456,7 @@ int main(int argc, const char** argv)
         if(getPrec(pstride.expo) > prec)
         {
             increasePrecision();
-            printf("*** Increasing precision to %i bits. ***\n", 63 * prec);
+            printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
         }
         printf("Generated image #%i in %i seconds. (", filecount - 1, timeDiff); 
         if(timeDiff == 0)

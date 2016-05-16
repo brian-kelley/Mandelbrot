@@ -4,6 +4,9 @@
 #include "stdbool.h"
 #include "stdio.h"
 #include "time.h"
+#ifndef __APPLE__
+#include "alloca.h"
+#endif //apple
 
 #ifndef PRECISION_H
 #define PRECISION_H
