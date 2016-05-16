@@ -7,7 +7,7 @@ all:
 	gcc ${CFLAGS} mandelbrot.c lodepng.c precision.c build/routines.o -lc -lpthread -o build/Mandelbrot
 
 linux:
-	nasm -f elf64 routines.asm -o build/routines.o 
+	nasm -f elf64 routinesLinux.asm -o build/routines.o 
 	gcc ${CFLAGS} mandelbrot.c lodepng.c precision.c build/routines.o -lc -lpthread -o build/Mandelbrot
 
 debug:

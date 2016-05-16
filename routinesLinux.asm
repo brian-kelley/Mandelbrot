@@ -1,10 +1,10 @@
 ; void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
 
-global _longmul
+global longmul
 
 section .text
 
-_longmul:
+longmul:
 ; according to 64 bit System V:
 ; f1 in rdi
 ; f2 in rsi
