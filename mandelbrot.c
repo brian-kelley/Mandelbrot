@@ -353,12 +353,13 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         pstride.expo -= zoomExpo;
         fmul(&temp, &fbestPX, &pstride);
         //set screen position to the best pixel
-        if(prec < getPrec((long long) pstride.expo - expoBias))
+        if(prec < getPrec(pstride.expo))
         {
             increasePrecision();
             INCR_PREC(temp);
             INCR_PREC(temp2);
             INCR_PREC(halfSize);
+            printf("*** Increasing precision to level %i ***\n", prec);
         }
     }
     free(iterbuf);
