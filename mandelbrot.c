@@ -237,9 +237,9 @@ void drawBuf()
     free(threads);
 }
 
-void recomputeMaxIter()
+void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 20;
+    const int normalIncrease = 20 * zoomExpo;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -290,10 +290,10 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     Float halfSize = floatLoad(1, gpx / 2);
     storeFloatVal(&screenX, 0);
     storeFloatVal(&screenY, 0);
-    maxiter = 100;
+    maxiter = 300;
     while((long long) pstride.expo - expoBias >= minExpo)
     {
-        printf("Pixel stride = %.10Le\n", getFloatVal(&pstride));
+        printf("Pixel stride = %Le, iter cap is %i\n", getFloatVal(&pstride), maxiter);
         //compute screenX, screenY
         fmul(&temp, &pstride, &halfSize);
         fsub(&temp2, &screenX, &temp);
@@ -319,7 +319,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             }
         }
         itersum /= (gpx * gpx); //compute average iter count
-        maxiter = (itersum * 2 + bestIters) / 3 + 200;
+        recomputeMaxIter(zoomExpo);
         if(bestIters == 0)
         {
             puts("getInterestingLocation() got stuck on window of converging points!");
@@ -340,7 +340,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             puts("getInterestingLocation() frame contains all the same iteration count!");
             break;
         }
-        recomputeMaxIter();
         storeFloatVal(&fbestPX, bestPX);
         storeFloatVal(&fbestPY, bestPY);
         //set screenX/screenY to location of best pixel
@@ -445,9 +444,9 @@ int main(int argc, const char** argv)
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     //Testing multiprecision
     prec = 1;
-    CHANGE_PREC(screenX, 1);
-    CHANGE_PREC(screenY, 1);
-    CHANGE_PREC(pstride, 1);
+    CHANGE_PREC(screenX, prec);
+    CHANGE_PREC(screenY, prec);
+    CHANGE_PREC(pstride, prec);
     winw = imageWidth;
     winh = imageHeight;
     initPositionVars();
@@ -466,14 +465,14 @@ int main(int argc, const char** argv)
         drawBuf();
         writeImage();
         zoomToTarget();
-        recomputeMaxIter();
+        recomputeMaxIter(1);
         int timeDiff = time(NULL) - start;
         if(getPrec(pstride.expo) > prec)
         {
             increasePrecision();
             printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
         }
-        printf("Generated image #%i in %i seconds. (", filecount - 1, timeDiff); 
+        printf("Generated image #%i in %i seconds (iter cap is %i) (", filecount - 1, timeDiff, maxiter); 
         if(timeDiff == 0)
             putchar('>');
         printf("%i pixels per second)\n", winw * winh / max(timeDiff, 1));

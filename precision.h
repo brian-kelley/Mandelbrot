@@ -4,6 +4,8 @@
 #include "stdbool.h"
 #include "stdio.h"
 #include "time.h"
+#include "assert.h"
+
 #ifndef __APPLE__
 #include "alloca.h"
 #endif //apple
@@ -40,9 +42,10 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs);
 bool biadd(BigInt* dst, BigInt* lhs, BigInt* rhs);  //returns true if overflow 
 void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
 void biinc(BigInt* op);                             //increment, no overflow check
-void bishr(BigInt* op, int bits);
 void bishlOne(BigInt* op);
 void bishl(BigInt* op, int bits);
+void bishr(BigInt* op, int bits);
+void bishrOne(BigInt* op);
 void biTwoComplement(BigInt* op);
 void biPrint(BigInt* op);
 u64 biNthBit(BigInt* op, int n);

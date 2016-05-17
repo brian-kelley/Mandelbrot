@@ -21,7 +21,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 void drawBuf();             //compute iteration count & color for every pixel in viewport
 void writeImage();          //use lodePNG to write out the current conv-rate buffer
 void increasePrecision();   //increment the precision of persistent Float values
-void recomputeMaxIter();    //update iteration cap between zooms
+void recomputeMaxIter(int zoomExpo);    //update iteration cap between zooms
 void zoomToTarget();        //do zoom step towards predetermined target (center doesn't move)
 void computeScreenPos();    //set screenX, screenY based on pstride, targetX, targetY
 void saveResumeState(const char* fname);

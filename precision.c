@@ -166,9 +166,19 @@ void bishlOne(BigInt* op)
     for(int i = 0; i < op->size - 1; i++)
     {
         op->val[i] <<= 1;
-        op->val[i] |= (op->val[i + 1] & (1ULL << 63)) >> 63;
+        op->val[i] |= (op->val[i + 1] & (1ULL << 62)) >> 62;
     }
     op->val[op->size - 1] <<= 1;
+}
+
+void bishrOne(BigInt* op)
+{
+    for(int i = op->size - 1; i > 0; i--)
+    {
+        op->val[i] >>= 1;
+        op->val[i] |= (op->val[i - 1] & 1ULL) << 62;
+    }
+    op->val[0] >>= 1;
 }
 
 void biinc(BigInt* op)
@@ -324,7 +334,8 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     //2 cases here: highest bit of product is 0 or 1
     if((bigDest.val[0] & (1ULL << 61)) == 0)
     {
-        bishl(&dst->mantissa, 2);
+        bishlOne(&dst->mantissa);
+        bishlOne(&dst->mantissa);
         newExpo--;
         dst->mantissa.val[words - 1] |= (bigDest.val[words] & (1ULL << 62));
         if(bigDest.val[1] & (1ULL << 60))
@@ -389,7 +400,7 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
         bool overflow = biadd(&dst->mantissa, &lhs->mantissa, &rhsAddend);
         if(overflow)
         {
-            bishr(&dst->mantissa, 1);
+            bishrOne(&dst->mantissa);
             dst->mantissa.val[0] |= (1ULL << 62);
             dst->expo++;
         }
@@ -397,7 +408,7 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     //dst exponent is same as lhs (will be incremented if add overflowed)
     if((dst->mantissa.val[0] & (1ULL << 62)) == 0)
     {
-        bishr(&dst->mantissa, 1);
+        bishrOne(&dst->mantissa);
         dst->mantissa.val[0] |= (1ULL << 62);
         dst->expo++;
     }
@@ -525,7 +536,7 @@ void fuzzTest()
             if(fabsl((getFloatVal(&sum) - actual) / actual) > tol)
             {
                 printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&sum));
-                return;
+                break;
             }
         }
         {
@@ -533,7 +544,7 @@ void fuzzTest()
             if(fabsl((getFloatVal(&diff) - actual) / actual) > tol)
             {
                 printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&diff));
-                return;
+                break;
             }
         }
         {
@@ -541,12 +552,13 @@ void fuzzTest()
             if(fabsl((getFloatVal(&prod) - actual) / actual) > tol)
             {
                 printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getFloatVal(&op1), getFloatVal(&op2), getFloatVal(&prod));
-                return;
+                break;
             }
         }
         if(tested++ % 1000000 == 999999)
             printf("%llu operand combinations tested.\n", tested);
     }
+    exit(EXIT_FAILURE);
 }
 
 //Float IO: precision, sign, expo, mantissa words
