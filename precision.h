@@ -48,6 +48,7 @@ void bishr(BigInt* op, int bits);
 void bishrOne(BigInt* op);
 void biTwoComplement(BigInt* op);
 void biPrint(BigInt* op);
+void biPrintBin(BigInt* op);
 u64 biNthBit(BigInt* op, int n);
 
 /*  Simple arbitrary precision floating point value
@@ -106,6 +107,7 @@ int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (
 Float floatRead(FILE* file);
 void floatWrite(Float* f, FILE* file);
 
-void fuzzTest();
+//Tests
+void fuzzTest();        //test all 3 float arithmetic functions with randomized long doubles
 
 #endif

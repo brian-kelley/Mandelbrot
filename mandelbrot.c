@@ -393,6 +393,7 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
+    fuzzTest();
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;

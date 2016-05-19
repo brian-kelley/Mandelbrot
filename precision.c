@@ -221,6 +221,21 @@ void biPrint(BigInt* op)
     puts("");
 }
 
+void biPrintBin(BigInt* op)
+{
+    for(int i = 0; i < op->size; i++)
+    {
+        u64 mask = (1ULL << 62);
+        for(int j = 0; j <= 62; j++)
+        {
+            int bit = op->val[i] & mask ? 1 : 0;
+            printf("%i", bit);
+            mask >>= 1;
+        }
+    }
+    puts("");
+}
+
 u64 biNthBit(BigInt* op, int n)
 {
     if(n < 0 || n >= op->size * 63)
@@ -294,7 +309,7 @@ long double getFloatVal(Float* f)
         if(f->mantissa.val[1] & (1ULL << 62))
             highWord++;
     }
-    *((short*) &mantBytes[8]) = 16382;      //this value is weird but it works
+    *((short*) &mantBytes[8]) = 16382;
     //copy mantissa 
     for(int byteCount = 0; byteCount < 8; byteCount++)
         mantBytes[byteCount] = highWordBytes[byteCount];
