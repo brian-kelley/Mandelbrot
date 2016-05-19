@@ -443,7 +443,7 @@ int main(int argc, const char** argv)
     pstride = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     //Testing multiprecision
-    prec = 1;
+    prec = 3;
     CHANGE_PREC(screenX, prec);
     CHANGE_PREC(screenY, prec);
     CHANGE_PREC(pstride, prec);
@@ -472,10 +472,12 @@ int main(int argc, const char** argv)
             increasePrecision();
             printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
         }
-        printf("Generated image #%i in %i seconds (iter cap is %i) (", filecount - 1, timeDiff, maxiter); 
+        printf("Image #%i took %i seconds. ", filecount - 1, timeDiff);
+        printf("iter cap: %i, ", maxiter);
+        printf("precision: %i, ", prec);
         if(timeDiff == 0)
             putchar('>');
-        printf("%i pixels per second)\n", winw * winh / max(timeDiff, 1));
+        printf("px/sec/thread: %i\n", winw * winh / max(timeDiff, 1) / numThreads);
     }
     free(iterbuf);
     free(pixbuf);
