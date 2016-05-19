@@ -1,4 +1,4 @@
-//#define DEBUG         //uncomment to get some extra sanity checks in mp math
+#define DEBUG         //uncomment to get some extra sanity checks in mp math
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"

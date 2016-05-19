@@ -1,6 +1,6 @@
 CFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math
 DEBUGFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math -g
-FASTCFLAGS=-std=c99 -Oz
+FASTCFLAGS=-std=c99 -O0
 
 all:
 	nasm -f macho64 routines.asm -o build/routines.o 

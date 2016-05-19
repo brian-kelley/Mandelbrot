@@ -251,12 +251,15 @@ void recomputeMaxIter(int zoomExpo)
         if(iterbuf[i] == maxiter)
             numMax++;
     }
-    numMax /= numColored;
-    int numBoosts = numMax / (numColored * 0.01);
-    if(numBoosts)
+    if(numColored)
     {
-        printf("Boosting iteration count by %i\n", boost * numBoosts);
-        maxiter += numBoosts * boost;
+        numMax /= numColored;
+        int numBoosts = numMax / (numColored * 0.01);
+        if(numBoosts)
+        {
+            printf("Boosting iteration count by %i\n", boost * numBoosts);
+            maxiter += numBoosts * boost;
+        }
     }
     maxiter += normalIncrease;
 }
@@ -388,15 +391,6 @@ int getPrec(int expo)
     return ceil(-unbiased / 50);
 }
 
-void saveResumeState(const char* fname)
-{
-}
-
-void loadResumeState(const char* fname)
-{
-
-}
-
 int main(int argc, const char** argv)
 {
     //Process cli arguments first
@@ -415,6 +409,12 @@ int main(int argc, const char** argv)
         {
             //# of threads is next
             sscanf(argv[++i], "%i", &numThreads);
+            //sanity check it
+            if(numThreads < 1)
+            {
+                puts("Can't have < 1 threads.");
+                numThreads = 1;
+            }
         }
         else if(strcmp(argv[i], "--targetcache") == 0)
             targetCache = argv[++i];
@@ -443,7 +443,7 @@ int main(int argc, const char** argv)
     pstride = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     //Testing multiprecision
-    prec = 3;
+    prec = 1;
     CHANGE_PREC(screenX, prec);
     CHANGE_PREC(screenY, prec);
     CHANGE_PREC(pstride, prec);
@@ -452,12 +452,25 @@ int main(int argc, const char** argv)
     initPositionVars();
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 100;
+#ifdef DEBUG
+    const int testStart = 58;
+    maxiter = 100 + 20 * testStart;
+    for(int i = 0; i < testStart; i++)
+    {
+        zoomToTarget();
+        if(getPrec(pstride.expo) > prec)
+            increasePrecision();
+    }
+#endif
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     computeScreenPos();     //get initial screenX, screenY
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
+#ifdef DEBUG
+    filecount = testStart;
+#endif
     //resume file: filecount, last maxiter, prec
     while((long long) pstride.expo - expoBias >= deepestExpo)
     {
@@ -476,8 +489,11 @@ int main(int argc, const char** argv)
         printf("iter cap: %i, ", maxiter);
         printf("precision: %i, ", prec);
         if(timeDiff == 0)
+        {
             putchar('>');
-        printf("px/sec/thread: %i\n", winw * winh / max(timeDiff, 1) / numThreads);
+            timeDiff = 1;
+        }
+        printf("px/sec/thread: %i\n", winw * winh / timeDiff / numThreads);
     }
     free(iterbuf);
     free(pixbuf);
