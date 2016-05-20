@@ -27,14 +27,14 @@ void BigIntDtor(BigInt* bi)
 static bool biAddWord(BigInt* bi, u64 word, int position)
 {
     bi->val[position] += word;
-    bool carry = bi->val[position] & carryMask;
+    u64 carry = bi->val[position] & carryMask;
     bi->val[position] &= digitMask;
     for(int i = position - 1; i >= 0; i--)
     {
         if(carry)
         {
             bi->val[i]++;
-            carry = !!(bi->val[i] & carryMask);
+            carry = bi->val[i] & carryMask;
             bi->val[i] &= digitMask;
         }
         else
@@ -58,23 +58,25 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
             u64 hi, lo;
             longmul(lhs->val[i], rhs->val[j], &hi, &lo);
             int destWord = i + j + 1;
+            hi <<= 1;
+            hi |= ((lo & (1ULL << 63)) >> 63);
+            lo &= digitMask;
             biAddWord(dst, lo, destWord);
             biAddWord(dst, hi, destWord - 1);
         }
     }
+    for(int i = 0; i < 2 * words; i++)
+        dst->val[i] &= digitMask;
 }
 
-bool biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
+u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
     for(int i = 0; i < dst->size; i++)
         dst->val[i] = lhs->val[i];
-    bool carry;
+    u64 carry;
     for(int i = rhs->size - 1; i >= 0; i--)
-    {
-        carry = false;
         carry = biAddWord(dst, rhs->val[i], i);
-    }
     //carry will have the carry bit of the last word (for i = 0)
     return carry;
 }
@@ -86,7 +88,7 @@ void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
         dst->val[i] = rhs->val[i];
     BigInt addend;
     addend.size = rhs->size;
-    addend.val = (u64*) alloca(lhs->size * sizeof(u64));
+    addend.val = (u64*) alloca(addend.size * sizeof(u64));
     for(int i = 0; i < rhs->size; i++)
         addend.val[i] = rhs->val[i];
     biTwoComplement(&addend);
@@ -204,7 +206,10 @@ void biinc(BigInt* op)
 void biTwoComplement(BigInt* op)
 {
     for(int i = 0; i < op->size; i++)
+    {
         op->val[i] = ~op->val[i];
+        op->val[i] &= digitMask;
+    }
     biinc(op);
 }
 
@@ -343,31 +348,24 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     bigDest.val = (u64*) alloca(2 * words * sizeof(u64));
     bigDest.size = 2 * words;
     bimul(&bigDest, &lhs->mantissa, &rhs->mantissa);
-    //copy high words into dst's mantissa
-    for(int i = 0; i < words; i++)
-        dst->mantissa.val[i] = bigDest.val[i];
+    for(int i = 0; i < 2 * words; i++)
+        assert(!(bigDest.val[i] & carryMask));
     //2 cases here: highest bit of product is 0 or 1
-    if((bigDest.val[0] & (1ULL << 61)) == 0)
+    if((bigDest.val[0] & (1ULL << 62)) == 0)
     {
-        bishlOne(&dst->mantissa);
-        bishlOne(&dst->mantissa);
+        bishlOne(&bigDest);
         newExpo--;
-        dst->mantissa.val[words - 1] |= (bigDest.val[words] & (1ULL << 62));
-        if(bigDest.val[1] & (1ULL << 60))
-            biinc(&dst->mantissa);
+        bigDest.val[words - 1] |= (bigDest.val[words] & (1ULL << 62)) >> 62;
     }
-    else
-    {
-        bishlOne(&dst->mantissa);
-        if(bigDest.val[words] & (1ULL << 62))
-            biinc(&dst->mantissa);
-    }
+    memcpy(dst->mantissa.val, bigDest.val, sizeof(u64) * words);
     dst->sign = lhs->sign ^ rhs->sign;
     dst->expo = (long long) newExpo + expoBias;
 }
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
+    FLOAT_CHECK(lhs);
+    FLOAT_CHECK(rhs);
 #ifdef DEBUG
     if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
         puts("fadd/fsub parameters have non-matching precision!");
@@ -429,14 +427,18 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     }
     //sum will always have the same sign as lhs
     dst->sign = lhs->sign;
+    FLOAT_CHECK(dst);
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)
 {
+    FLOAT_CHECK(lhs);
+    FLOAT_CHECK(rhs);
     bool savedSign = rhs->sign;
     rhs->sign = !rhs->sign;
     fadd(dst, lhs, rhs);
     rhs->sign = savedSign;
+    FLOAT_CHECK(dst);
 }
 
 bool fzero(Float* f)

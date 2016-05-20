@@ -51,8 +51,6 @@ void writeImage()
 void zoomToTarget()
 {
     //update pixel stride
-    MAKE_STACK_FLOAT(sizeFactor);
-    MAKE_STACK_FLOAT(temp);
     pstride.expo--;     //hard-code the 2x zoom factor
     computeScreenPos();
 }
@@ -198,6 +196,7 @@ void* workerFunc(void* unused)
             return NULL;
         //Otherwise, compute the pixels for column xpix
         storeFloatVal(&xpixFloat, xpix);
+        assert(pstride.mantissa.size == prec && screenX.mantissa.size == prec && screenY.mantissa.size == prec);
         fmul(&addtemp, &pstride, &xpixFloat);
         fadd(&x, &screenX, &addtemp);
         fcopy(&yiter, &screenY);
@@ -393,7 +392,6 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    fuzzTest();
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
@@ -443,7 +441,6 @@ int main(int argc, const char** argv)
     screenY = FloatCtor(1);
     pstride = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-    //Testing multiprecision
     prec = 1;
     CHANGE_PREC(screenX, prec);
     CHANGE_PREC(screenY, prec);
@@ -454,13 +451,16 @@ int main(int argc, const char** argv)
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 100;
 #ifdef DEBUG
-    const int testStart = 58;
-    maxiter = 100 + 20 * testStart;
+    const int testStart = 60;
+    maxiter += 20 * testStart;
     for(int i = 0; i < testStart; i++)
     {
         zoomToTarget();
         if(getPrec(pstride.expo) > prec)
+        {
+            printf("debug: incrementing precision to %i\n", prec + 1);
             increasePrecision();
+        }
     }
 #endif
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
@@ -489,14 +489,10 @@ int main(int argc, const char** argv)
         printf("Image #%i took %i seconds. ", filecount - 1, timeDiff);
         printf("iter cap: %i, ", maxiter);
         printf("precision: %i, ", prec);
-        if(timeDiff == 0)
-        {
-            putchar('>');
-            timeDiff = 1;
-        }
-        printf("px/sec/thread: %i\n", winw * winh / timeDiff / numThreads);
+        printf("px/sec/thread: %i\n", winw * winh / max(1, timeDiff) / numThreads);
     }
     free(iterbuf);
     free(pixbuf);
     free(colortable);
 }
+

@@ -17,7 +17,7 @@ typedef unsigned char u8;
 typedef unsigned long long u64;
 
 #define carryMask (1ULL << 63)
-#define digitMask (~carryMask)
+#define digitMask ((1ULL << 63) - 1)
 #define expoBias (0x7FFFFFFF)  //this value is subtracted from actual exponent
 
 #define max(a, b) (a < b ? b : a)
@@ -36,12 +36,12 @@ BigInt BigIntCtor(int size);
 BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
-void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs);  
+void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
-bool biadd(BigInt* dst, BigInt* lhs, BigInt* rhs);  //returns true if overflow 
-void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
-void biinc(BigInt* op);                             //increment, no overflow check
+u64 biadd(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
+void bisub(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
+void biinc(BigInt* op);                            //increment, no overflow check
 void bishlOne(BigInt* op);
 void bishl(BigInt* op, int bits);
 void bishr(BigInt* op, int bits);
@@ -86,9 +86,17 @@ typedef struct
     f.mantissa.val[f.mantissa.size - 1] = 0;
 
 #define CHANGE_PREC(f, newPrec) \
+{ \
+    int oldPrec = f.mantissa.size; \
     f.mantissa.size = newPrec; \
     f.mantissa.val = (u64*) realloc(f.mantissa.val, newPrec * sizeof(u64)); \
-    f.mantissa.val[f.mantissa.size - 1] = 0;
+    for(int _i = oldPrec; _i < newPrec; _i++) \
+        f.mantissa.val[_i] = 0; \
+}
+
+#define FLOAT_CHECK(f) \
+for(int _i = 0; _i < f->mantissa.size; _i++) \
+    assert((f->mantissa.val[_i] & carryMask) == 0);
 
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);
@@ -96,12 +104,11 @@ void FloatDtor(Float* f);
 void storeFloatVal(Float* f, long double d);
 long double getFloatVal(Float* f);
 void floatWriteZero(Float* f);
-void fmul(Float* dst, Float* lhs, Float* rhs);
-void fadd(Float* dst, Float* lhs, Float* rhs);
-void faddip(Float* dst, Float* rhs);
-void fsub(Float* dst, Float* lhs, Float* rhs);
-void fconvert(Float* dst, Float* src);              
-void fcopy(Float* dst, Float* src);
+void fmul(Float* restrict dst, Float* lhs, Float* rhs);
+void fadd(Float* restrict dst, Float* lhs, Float* rhs);
+void fsub(Float* restrict dst, Float* lhs, Float* rhs);
+void fconvert(Float* restrict dst, Float* src);              
+void fcopy(Float* restrict dst, Float* src);
 bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
 Float floatRead(FILE* file);
