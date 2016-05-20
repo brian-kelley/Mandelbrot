@@ -121,6 +121,7 @@ void bishl(BigInt* op, int bits)
     for(int i = 0; i < op->size; i++)
     {
         op->val[i] <<= bits;
+        op->val[i] &= digitMask;
         if(i < op->size - 1)
         {
             moved = op->val[i + 1] & mask;
@@ -168,9 +169,11 @@ void bishlOne(BigInt* op)
     for(int i = 0; i < op->size - 1; i++)
     {
         op->val[i] <<= 1;
+        op->val[i] &= digitMask;
         op->val[i] |= (op->val[i + 1] & (1ULL << 62)) >> 62;
     }
     op->val[op->size - 1] <<= 1;
+    op->val[op->size - 1] &= digitMask;
 }
 
 void bishrOne(BigInt* op)
@@ -288,7 +291,6 @@ void storeFloatVal(Float* f, long double d)
     for(int byteCount = 0; byteCount < 8; byteCount++)
         highWordBytes[byteCount] = mantBytes[byteCount];
     //shift the mantissa down 1 bit so the high word contains 63 significant bits
-    f->mantissa.val[0] &= digitMask;
     bishr(&f->mantissa, 1);
     f->mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high, but may be lost by bishl
     for(int i = 1; i < f->mantissa.size; i++)
@@ -399,7 +401,7 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
         //subtract shifted rhs from lhs using 2s complement
         bisub(&dst->mantissa, &lhs->mantissa, &rhsAddend);
         int shifts = 0;
-        while((dst->mantissa.val[0] & (1ULL << 62)) == 0)
+        while(!(dst->mantissa.val[0] & (1ULL << 62)))
         {
             bishlOne(&dst->mantissa);
             dst->expo--;
