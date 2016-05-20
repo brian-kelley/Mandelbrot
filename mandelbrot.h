@@ -10,7 +10,7 @@
 
 typedef uint32_t Uint32;
 
-#define deepestExpo -1000
+#define deepestExpo -300
 
 /* Initialization functions */
 void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)

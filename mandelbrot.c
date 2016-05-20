@@ -238,7 +238,7 @@ void drawBuf()
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 20 * zoomExpo;
+    const int normalIncrease = 30 * zoomExpo;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -381,6 +381,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     }
     FloatDtor(&temp);
     FloatDtor(&temp2);
+    FloatDtor(&fbestPX);
+    FloatDtor(&fbestPY);
     FloatDtor(&halfSize);
 }
 
@@ -451,7 +453,7 @@ int main(int argc, const char** argv)
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 100;
 #ifdef DEBUG
-    const int testStart = 60;
+    const int testStart = 40;
     maxiter += 20 * testStart;
     for(int i = 0; i < testStart; i++)
     {
