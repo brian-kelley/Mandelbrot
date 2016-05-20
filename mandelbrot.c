@@ -238,7 +238,7 @@ void drawBuf()
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 30 * zoomExpo;
+    const int normalIncrease = 25 * zoomExpo;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -277,14 +277,14 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     targetX = FloatCtor(1);
     targetY = FloatCtor(1);
     //make a temporary iteration count buffer
-    int gpx = 32;                       //size, in pixels, of GIL iteration buffer (must be PoT)
+    int gpx = 16;                       //size, in pixels, of GIL iteration buffer (must be PoT)
     winw = gpx;
     winh = gpx;
     iterbuf = (int*) malloc(gpx * gpx * sizeof(int));
     prec = 1;
     long double initViewport = 4;
     storeFloatVal(&pstride, initViewport / gpx);
-    int zoomExpo = 3;               //log_2 of zoom factor 
+    int zoomExpo = 4;               //log_2 of zoom factor 
     Float fbestPX = FloatCtor(1);
     Float fbestPY = FloatCtor(1);
     Float temp = FloatCtor(1);

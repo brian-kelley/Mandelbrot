@@ -1,4 +1,4 @@
-#define DEBUG
+//#define DEBUG
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
