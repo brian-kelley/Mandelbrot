@@ -1,4 +1,4 @@
-//#define DEBUG
+#define DEBUG
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -13,7 +13,7 @@ typedef uint32_t Uint32;
 #define deepestExpo -300
 
 /* Initialization functions */
-void initPositionVars();    //initialize viewport (screenX, screenY, width, height, etc)
+void initPositionVars();
 void initColorTable();      //compute the RGBA values and store in a static table
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 
@@ -22,8 +22,6 @@ void drawBuf();             //compute iteration count & color for every pixel in
 void writeImage();          //use lodePNG to write out the current conv-rate buffer
 void increasePrecision();   //increment the precision of persistent Float values
 void recomputeMaxIter(int zoomExpo);    //update iteration cap between zooms
-void zoomToTarget();        //do zoom step towards predetermined target (center doesn't move)
-void computeScreenPos();    //set screenX, screenY based on pstride, targetX, targetY
 void saveResumeState(const char* fname);
 void loadResumeState(const char* fname);
 

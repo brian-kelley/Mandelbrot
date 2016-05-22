@@ -1,5 +1,5 @@
 CFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math
-DEBUGFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math -g
+DEBUGFLAGS=-std=c99 -g
 FASTCFLAGS=-std=c99 -O0
 
 all:

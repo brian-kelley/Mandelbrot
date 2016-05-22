@@ -1,7 +1,5 @@
 #include "mandelbrot.h"
 
-Float screenX;
-Float screenY;
 Float pstride;      //size of a pixel
 Float targetX;
 Float targetY;
@@ -20,18 +18,13 @@ int winh;
 void initPositionVars()
 {
     const long double startw = 4;
-    screenX = FloatCtor(1);
-    screenY = FloatCtor(1);
     pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
-    computeScreenPos();
 }
 
 void increasePrecision()
 {
     //reallocate space for the persistent Float variables
     //INCR_PREC macro copies significant words into reallocated space and updates mantissa size
-    INCR_PREC(screenX);
-    INCR_PREC(screenY);
     INCR_PREC(pstride);
     prec++;
 }
@@ -52,27 +45,6 @@ void zoomToTarget()
 {
     //update pixel stride
     pstride.expo--;     //hard-code the 2x zoom factor
-    computeScreenPos();
-}
-
-void computeScreenPos()
-{
-    MAKE_STACK_FLOAT(pixWidth);
-    MAKE_STACK_FLOAT(pixHeight);
-    MAKE_STACK_FLOAT(temp);
-    //need copies of targetX, targetY with matching precision
-    MAKE_STACK_FLOAT(targetXlocal);
-    MAKE_STACK_FLOAT(targetYlocal);
-    fcopy(&targetXlocal, &targetX);
-    fcopy(&targetYlocal, &targetY);
-    storeFloatVal(&pixWidth, winw);
-    storeFloatVal(&pixHeight, winh);
-    pixWidth.expo--;
-    pixHeight.expo--;
-    fmul(&temp, &pstride, &pixWidth);
-    fsub(&screenX, &targetXlocal, &temp);
-    fmul(&temp, &pstride, &pixHeight);
-    fsub(&screenY, &targetYlocal, &temp);
 }
 
 void initColorTable()
@@ -180,10 +152,12 @@ int getConvRateLD(long double real, long double imag)
 
 void* workerFunc(void* unused)
 {
-    MAKE_STACK_FLOAT(xpixFloat);
+    MAKE_STACK_FLOAT(pixFloat);
     MAKE_STACK_FLOAT(x);
     MAKE_STACK_FLOAT(yiter);
     MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
+    MAKE_STACK_FLOAT(targetXLocal);
+    MAKE_STACK_FLOAT(targetYLocal);
     while(true)
     {
         //Fetch and increment the current work column
@@ -195,11 +169,15 @@ void* workerFunc(void* unused)
         if(xpix >= winw)
             return NULL;
         //Otherwise, compute the pixels for column xpix
-        storeFloatVal(&xpixFloat, xpix);
-        assert(pstride.mantissa.size == prec && screenX.mantissa.size == prec && screenY.mantissa.size == prec);
-        fmul(&addtemp, &pstride, &xpixFloat);
-        fadd(&x, &screenX, &addtemp);
-        fcopy(&yiter, &screenY);
+        storeFloatVal(&pixFloat, xpix - winw / 2);
+        fmul(&addtemp, &pixFloat, &pstride);
+        fcopy(&targetXLocal, &targetX);
+        fadd(&x, &targetXLocal, &addtemp);
+        //prepare y as the minimum y of the viewport
+        storeFloatVal(&pixFloat, winh / 2);
+        fmul(&addtemp, &pixFloat, &pstride);
+        fcopy(&targetYLocal, &targetY);
+        fsub(&yiter, &targetYLocal, &addtemp);
         for(int ypix = 0; ypix < winh; ypix++)
         {
             int convRate = getConvRate(&x, &yiter);
@@ -274,8 +252,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         fclose(cache);
         return;
     }
-    targetX = FloatCtor(1);
-    targetY = FloatCtor(1);
+    targetX = floatLoad(1, 0);
+    targetY = floatLoad(1, 0);
     //make a temporary iteration count buffer
     int gpx = 16;                       //size, in pixels, of GIL iteration buffer (must be PoT)
     winw = gpx;
@@ -290,18 +268,11 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     Float temp = FloatCtor(1);
     Float temp2 = FloatCtor(1);
     Float halfSize = floatLoad(1, gpx / 2);
-    storeFloatVal(&screenX, 0);
-    storeFloatVal(&screenY, 0);
     maxiter = 300;
     while((long long) pstride.expo - expoBias >= minExpo)
     {
         printf("Pixel stride = %Le, iter cap is %i\n", getFloatVal(&pstride), maxiter);
-        //compute screenX, screenY
-        fmul(&temp, &pstride, &halfSize);
-        fsub(&temp2, &screenX, &temp);
-        fcopy(&screenX, &temp2);
-        fsub(&temp2, &screenY, &temp);
-        fcopy(&screenY, &temp2);
+        //drawBuf() only depends on pixel stride, which is already set 
         drawBuf();
         int bestPX;
         int bestPY;
@@ -342,17 +313,20 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             puts("getInterestingLocation() frame contains all the same iteration count!");
             break;
         }
-        storeFloatVal(&fbestPX, bestPX);
-        storeFloatVal(&fbestPY, bestPY);
-        //set screenX/screenY to location of best pixel
+        storeFloatVal(&fbestPX, bestPX - gpx / 2);
+        storeFloatVal(&fbestPY, bestPY - gpx / 2);
+        //update targetX, targetY to the exact position of the best pixel 
+        FLOAT_CHECK(pstride);
+        FLOAT_CHECK(fbestPX);
         fmul(&temp, &fbestPX, &pstride);
-        fcopy(&temp2, &screenX);
-        fadd(&screenX, &temp, &temp2);
+        FLOAT_CHECK(temp);
+        fcopy(&temp2, &targetX);
+        fadd(&targetX, &temp, &temp2);
         fmul(&temp, &fbestPY, &pstride);
-        fcopy(&temp2, &screenY);
-        fadd(&screenY, &temp, &temp2);
+        fcopy(&temp2, &targetY);
+        fadd(&targetY, &temp, &temp2);
+        //zoom in according to the PoT zoom factor defined above
         pstride.expo -= zoomExpo;
-        fmul(&temp, &fbestPX, &pstride);
         //set screen position to the best pixel
         if(prec < getPrec(pstride.expo))
         {
@@ -360,6 +334,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             INCR_PREC(temp);
             INCR_PREC(temp2);
             INCR_PREC(halfSize);
+            INCR_PREC(targetX);
+            INCR_PREC(targetY);
             printf("*** Increasing precision to level %i ***\n", prec);
         }
     }
@@ -367,10 +343,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     iterbuf = NULL;
     //do not lose any precision when storing targetX, targetY
     puts("Saving target position.");
-    CHANGE_PREC(targetX, prec);
-    CHANGE_PREC(targetY, prec);
-    fcopy(&targetX, &screenX);
-    fcopy(&targetY, &screenY);
     if(cacheFile)
     {
         cache = fopen(cacheFile, "w");
@@ -389,7 +361,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 int getPrec(int expo)
 {
     double unbiased = (long long) expo - expoBias;
-    return ceil(-unbiased / 50);
+    return ceil(-unbiased / 60);
 }
 
 int main(int argc, const char** argv)
@@ -398,7 +370,7 @@ int main(int argc, const char** argv)
     //Set all the arguments to default first
     const char* targetCache = NULL;
     bool useTargetCache = false;
-    numThreads = 1;
+    numThreads = 4;
     const int defaultWidth = 640;
     const int defaultHeight = 480;
     int imageWidth = defaultWidth;
@@ -439,13 +411,9 @@ int main(int argc, const char** argv)
     else if(targetCache)
         printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
-    screenX = FloatCtor(1);
-    screenY = FloatCtor(1);
     pstride = FloatCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     prec = 1;
-    CHANGE_PREC(screenX, prec);
-    CHANGE_PREC(screenY, prec);
     CHANGE_PREC(pstride, prec);
     winw = imageWidth;
     winh = imageHeight;
@@ -453,21 +421,20 @@ int main(int argc, const char** argv)
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 100;
 #ifdef DEBUG
-    const int testStart = 40;
+    const int testStart = 65;
     maxiter += 20 * testStart;
     for(int i = 0; i < testStart; i++)
     {
         zoomToTarget();
         if(getPrec(pstride.expo) > prec)
         {
-            printf("debug: incrementing precision to %i\n", prec + 1);
+            printf("debug: incrementing precision to %i at skipped image %i\n", prec + 1, i);
             increasePrecision();
         }
     }
 #endif
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
-    computeScreenPos();     //get initial screenX, screenY
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;

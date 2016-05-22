@@ -95,8 +95,10 @@ typedef struct
 }
 
 #define FLOAT_CHECK(f) \
-for(int _i = 0; _i < f->mantissa.size; _i++) \
-    assert((f->mantissa.val[_i] & carryMask) == 0);
+{ \
+for(int _i = 0; _i < (f).mantissa.size; _i++) \
+    assert(((f).mantissa.val[_i] & carryMask) == 0); \
+}
 
 Float FloatCtor(int prec);
 Float floatLoad(int prec, long double d);

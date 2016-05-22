@@ -40,6 +40,9 @@ static bool biAddWord(BigInt* bi, u64 word, int position)
         else
             break;
     }
+    //debug
+    for(int i = 0; i < bi->size; i++)
+        bi->val[i] &= digitMask;
     return carry;
 }
 
@@ -65,8 +68,6 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
             biAddWord(dst, hi, destWord - 1);
         }
     }
-    for(int i = 0; i < 2 * words; i++)
-        dst->val[i] &= digitMask;
 }
 
 u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
@@ -292,9 +293,11 @@ void storeFloatVal(Float* f, long double d)
         highWordBytes[byteCount] = mantBytes[byteCount];
     //shift the mantissa down 1 bit so the high word contains 63 significant bits
     bishr(&f->mantissa, 1);
-    f->mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high, but may be lost by bishl
+    f->mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high to be normalized
     for(int i = 1; i < f->mantissa.size; i++)
         f->mantissa.val[i] = 0;
+    if(f->mantissa.size > 1)
+        f->mantissa.val[1] |= ((u64) mantBytes[0] & 1) << 62;
 }
 
 long double getFloatVal(Float* f)
@@ -366,8 +369,6 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
-    FLOAT_CHECK(lhs);
-    FLOAT_CHECK(rhs);
 #ifdef DEBUG
     if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
         puts("fadd/fsub parameters have non-matching precision!");
@@ -429,18 +430,18 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
     }
     //sum will always have the same sign as lhs
     dst->sign = lhs->sign;
-    FLOAT_CHECK(dst);
+    FLOAT_CHECK(*dst);
 }
 
 void fsub(Float* dst, Float* lhs, Float* rhs)
 {
-    FLOAT_CHECK(lhs);
-    FLOAT_CHECK(rhs);
+    FLOAT_CHECK(*lhs);
+    FLOAT_CHECK(*rhs);
     bool savedSign = rhs->sign;
     rhs->sign = !rhs->sign;
     fadd(dst, lhs, rhs);
     rhs->sign = savedSign;
-    FLOAT_CHECK(dst);
+    FLOAT_CHECK(*dst);
 }
 
 bool fzero(Float* f)
