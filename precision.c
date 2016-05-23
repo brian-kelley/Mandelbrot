@@ -298,6 +298,8 @@ void storeFloatVal(Float* f, long double d)
         f->mantissa.val[i] = 0;
     if(f->mantissa.size > 1)
         f->mantissa.val[1] |= ((u64) mantBytes[0] & 1) << 62;
+    for(int i = 0; i < f->mantissa.size; i++)
+        f->mantissa.val[i] &= digitMask;
 }
 
 long double getFloatVal(Float* f)

@@ -158,6 +158,7 @@ void* workerFunc(void* unused)
     MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
     MAKE_STACK_FLOAT(targetXLocal);
     MAKE_STACK_FLOAT(targetYLocal);
+    bool lol = true;
     while(true)
     {
         //Fetch and increment the current work column
@@ -361,7 +362,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 int getPrec(int expo)
 {
     double unbiased = (long long) expo - expoBias;
-    return ceil(-unbiased / 60);
+    return ceil(-unbiased / 100);
 }
 
 int main(int argc, const char** argv)
@@ -421,7 +422,7 @@ int main(int argc, const char** argv)
     printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
     maxiter = 100;
 #ifdef DEBUG
-    const int testStart = 65;
+    const int testStart = 62;
     maxiter += 20 * testStart;
     for(int i = 0; i < testStart; i++)
     {
@@ -445,6 +446,7 @@ int main(int argc, const char** argv)
     while((long long) pstride.expo - expoBias >= deepestExpo)
     {
         time_t start = time(NULL);
+        printf("About to compute image; pstride = %.30Le\n", getFloatVal(&pstride));
         drawBuf();
         writeImage();
         zoomToTarget();
