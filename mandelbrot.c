@@ -362,7 +362,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 int getPrec(int expo)
 {
     double unbiased = (long long) expo - expoBias;
-    return ceil(-unbiased / 100);
+    return ceil(-unbiased / 60);
 }
 
 int main(int argc, const char** argv)

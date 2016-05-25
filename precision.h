@@ -115,6 +115,7 @@ bool fzero(Float* f);                                   //is the float +-0?
 int compareFloatMagnitude(Float* lhs, Float* rhs);      //-1, 0, 1 resp. < = > (like strcmp)
 Float floatRead(FILE* file);
 void floatWrite(Float* f, FILE* file);
+void floatPrint(Float* f);
 
 //Tests
 void fuzzTest();        //test all 3 float arithmetic functions with randomized long doubles

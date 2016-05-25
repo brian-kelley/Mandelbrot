@@ -26,6 +26,7 @@ void BigIntDtor(BigInt* bi)
 
 static bool biAddWord(BigInt* bi, u64 word, int position)
 {
+    assert((word & carryMask) == 0);
     bi->val[position] += word;
     u64 carry = bi->val[position] & carryMask;
     bi->val[position] &= digitMask;
@@ -63,6 +64,7 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
             int destWord = i + j + 1;
             hi <<= 1;
             hi |= ((lo & (1ULL << 63)) >> 63);
+            hi &= digitMask;
             lo &= digitMask;
             biAddWord(dst, lo, destWord);
             biAddWord(dst, hi, destWord - 1);
@@ -601,4 +603,54 @@ void floatWrite(Float* f, FILE* file)
     fwrite(&f->sign, sizeof(bool), 1, file);
     fwrite(&f->expo, sizeof(unsigned), 1, file);
     fwrite(f->mantissa.val, sizeof(u64), f->mantissa.size, file);
+}
+
+void floatPrint(Float* f)
+{
+    const int words = f->mantissa.size;
+    MAKE_STACK_FLOAT_PREC(ten, words);
+    storeFloatVal(&ten, 10);
+    MAKE_STACK_FLOAT_PREC(mant, words);
+    MAKE_STACK_FLOAT_PREC(temp, words);
+    mant.expo = expoBias;
+    mant.sign  = false;
+    for(int i = 0; i < words; i++)
+    {
+        mant.mantissa.val[i] = f->mantissa.val[i];
+    }
+    if(fzero(f))
+    {
+        printf("0.0\n");
+        return;
+    }
+    if(f->sign)
+    {
+        putchar('-');
+    }
+    //will only work for integers that can fit in F80
+    printf("0.");       //the start of every normalized number
+    int decDigits = 63 * words / (log(10) / log(2));
+    for(int i = 0; i < decDigits; i++)
+    {
+        bool allZero = true;
+        for(int i = 0; i < words; i++)
+        {
+            if(mant.mantissa.val[i])
+            {
+                allZero = false;
+                break;
+            }
+        }
+        fmul(&temp, &mant, &ten);
+        fcopy(&mant, &temp);
+        //mant = mant % 10
+        while(compareFloatMagnitude(&mant, &ten) == 1)
+        {
+            fsub(&temp, &mant, &ten);
+            fcopy(&mant, &temp);
+        }
+        printf("%i", (int) getFloatVal(&mant));
+    }
+    printf(" * 2^%lli\n", ((long long) f->expo) - expoBias);
+    puts("Done");
 }
