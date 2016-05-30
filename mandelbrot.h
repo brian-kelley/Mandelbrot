@@ -6,7 +6,7 @@
 #include "time.h"
 #include "pthread.h"
 #include "lodepng.h"
-#include "precision.h"
+#include "fixedpoint.h"
 
 typedef uint32_t Uint32;
 
@@ -28,6 +28,6 @@ void loadResumeState(const char* fname);
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void* workerFunc(void*);         //pthread worker thread function
-int getConvRate(Float* real, Float* imag);  //actually iterate z = z^2 + c, return iteration count
+int getConvRate(FP* real, FP* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
 int getPrec(int zoomExpo);  //get the precision level required (pass raw biased value)

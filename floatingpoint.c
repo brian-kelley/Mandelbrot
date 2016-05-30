@@ -1,260 +1,4 @@
-#include "precision.h"
-
-BigInt BigIntCtor(int size)
-{
-    BigInt rv;
-    rv.val = (u64*) malloc(size * sizeof(u64));  //initialize to 0
-    rv.size = size;
-    memset(rv.val, 0, size * sizeof(u64));
-    return rv;
-}
-
-BigInt BigIntCopy(BigInt* bi)
-{
-    BigInt copy;
-    copy.size = bi->size;
-    copy.val = (u64*) malloc(copy.size * sizeof(u64));
-    for(int i = 0; i < bi->size; i++)
-        copy.val[i] = bi->val[i];
-    return copy;
-}
-
-void BigIntDtor(BigInt* bi)
-{
-    free(bi->val);
-}
-
-static bool biAddWord(BigInt* bi, u64 word, int position)
-{
-    assert((word & carryMask) == 0);
-    bi->val[position] += word;
-    u64 carry = bi->val[position] & carryMask;
-    bi->val[position] &= digitMask;
-    for(int i = position - 1; i >= 0; i--)
-    {
-        if(carry)
-        {
-            bi->val[i]++;
-            carry = bi->val[i] & carryMask;
-            bi->val[i] &= digitMask;
-        }
-        else
-            break;
-    }
-    //debug
-    for(int i = 0; i < bi->size; i++)
-        bi->val[i] &= digitMask;
-    return carry;
-}
-
-void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
-{
-    //zero out dst
-    int words = lhs->size;
-    for(int i = 0; i < 2 * words; i++)
-        dst->val[i] = 0;
-    //first, compute the low half of the full result
-    for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
-    {
-        for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
-        {
-            //do the long multiplication
-            u64 hi, lo;
-            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
-            int destWord = i + j + 1;
-            hi <<= 1;
-            hi |= ((lo & (1ULL << 63)) >> 63);
-            hi &= digitMask;
-            lo &= digitMask;
-            biAddWord(dst, lo, destWord);
-            biAddWord(dst, hi, destWord - 1);
-        }
-    }
-}
-
-u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
-{
-    //copy lhs value into dst
-    for(int i = 0; i < dst->size; i++)
-        dst->val[i] = lhs->val[i];
-    u64 carry;
-    for(int i = rhs->size - 1; i >= 0; i--)
-        carry = biAddWord(dst, rhs->val[i], i);
-    //carry will have the carry bit of the last word (for i = 0)
-    return carry;
-}
-
-void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
-{
-    //copy words of rhs into dst
-    for(int i = 0; i < dst->size; i++)
-        dst->val[i] = rhs->val[i];
-    BigInt addend;
-    addend.size = rhs->size;
-    addend.val = (u64*) alloca(addend.size * sizeof(u64));
-    for(int i = 0; i < rhs->size; i++)
-        addend.val[i] = rhs->val[i];
-    biTwoComplement(&addend);
-    biadd(dst, lhs, &addend);
-}
-
-void bishl(BigInt* op, int bits)
-{
-    if(bits >= 63 * op->size)
-    {
-        memset(op->val, 0, op->size * sizeof(u64));
-        return;
-    }
-    //note: the highest bit of each word is not used
-    const int wordBits = 63;
-    int wordShift = bits / wordBits;
-    int bitShift = bits % wordBits;
-    //first, apply word shift
-    for(int i = 0; i < op->size - wordShift; i++)
-        op->val[i] = op->val[i + wordShift];
-    for(int i = op->size - wordShift; i < op->size; i++)
-        op->val[i] = 0;
-    if(bitShift == 0)
-        return;
-    //determine the bit mask for the bits that are copied up into the next word
-    int hishift = wordBits - bits;
-    u64 mask = ((1ULL << bits) - 1) << hishift;
-    //do the lowest word manually
-    u64 moved;
-    for(int i = 0; i < op->size; i++)
-    {
-        op->val[i] <<= bits;
-        op->val[i] &= digitMask;
-        if(i < op->size - 1)
-        {
-            moved = op->val[i + 1] & mask;
-            op->val[i] |= (moved >> hishift);
-        }
-    }
-}
-
-void bishr(BigInt* op, int bits)
-{
-    if(bits >= 63 * op->size)
-    {
-        memset(op->val, 0, op->size * sizeof(u64));
-        return;
-    }
-    //note: the highest bit of each word is not used
-    const int wordBits = 63;
-    int wordShift = bits / wordBits;
-    int bitShift = bits % wordBits;
-    //first, apply word shift
-    for(int i = op->size - wordShift - 1; i >= 0; i--)
-        op->val[i + wordShift] = op->val[i];
-    for(int i = 0; i < wordShift; i++)
-        op->val[i] = 0;
-    if(bitShift == 0)
-        return;
-    //determine the bit mask for the bits that are copied up into the next word
-    int hishift = wordBits - bits;
-    u64 mask = ((1ULL << bits) - 1);
-    //do the lowest word manually
-    u64 moved;
-    for(int i = op->size - 1; i >= 0; i--)
-    {
-        op->val[i] >>= bits;
-        if(i > 0)
-        {
-            moved = op->val[i - 1] & mask;
-            op->val[i] |= (moved << hishift);
-        }
-    }
-}
-
-void bishlOne(BigInt* op)
-{
-    for(int i = 0; i < op->size - 1; i++)
-    {
-        op->val[i] <<= 1;
-        op->val[i] &= digitMask;
-        op->val[i] |= (op->val[i + 1] & (1ULL << 62)) >> 62;
-    }
-    op->val[op->size - 1] <<= 1;
-    op->val[op->size - 1] &= digitMask;
-}
-
-void bishrOne(BigInt* op)
-{
-    for(int i = op->size - 1; i > 0; i--)
-    {
-        op->val[i] >>= 1;
-        op->val[i] |= (op->val[i - 1] & 1ULL) << 62;
-    }
-    op->val[0] >>= 1;
-}
-
-void biinc(BigInt* op)
-{
-    op->val[op->size - 1]++;
-    bool carry = op->val[op->size - 1] & carryMask;
-    if(carry)
-    {
-        op->val[op->size - 1] &= digitMask;
-        for(int i = op->size - 2; i >= 0; i--)
-        {
-            if(carry)
-                op->val[i]++;
-            carry = op->val[i] & carryMask;
-            if(carry)
-                op->val[i] &= digitMask;
-            else
-                return;
-        }
-    }
-}
-
-void biTwoComplement(BigInt* op)
-{
-    for(int i = 0; i < op->size; i++)
-    {
-        op->val[i] = ~op->val[i];
-        op->val[i] &= digitMask;
-    }
-    biinc(op);
-}
-
-void biPrint(BigInt* op)
-{
-    int numQwords = ceil((op->size * 63.0) / 64.0);
-    for(int qword = 0; qword < numQwords; qword++)
-    {
-        u64 bits = 0;
-        for(int i = 0; i < 64; i++)
-            bits |= (biNthBit(op, 64 * (numQwords - 1 - qword) + i) << i);
-        printf("%016llx", bits);
-    }
-    puts("");
-}
-
-void biPrintBin(BigInt* op)
-{
-    for(int i = 0; i < op->size; i++)
-    {
-        u64 mask = (1ULL << 62);
-        for(int j = 0; j <= 62; j++)
-        {
-            int bit = op->val[i] & mask ? 1 : 0;
-            printf("%i", bit);
-            mask >>= 1;
-        }
-    }
-    puts("");
-}
-
-u64 biNthBit(BigInt* op, int n)
-{
-    if(n < 0 || n >= op->size * 63)
-        return 0;
-    int word = n / 63;
-    int bit = n % 63;
-    return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
-}
+#include "floatingpoint.h"
 
 Float FloatCtor(int prec)
 {
@@ -290,7 +34,7 @@ void storeFloatVal(Float* f, long double d)
     f->expo = (long long) expoTemp + expoBias;
     u8* mantBytes = (u8*) &mant;
     u8* highWordBytes = (u8*) &f->mantissa.val[0];
-    //copy 64 bit mantissa. Byte order is LE in the long double and LE in the u64
+    //copy 64 bit mantissa. Byte order is LE in the long double and LE within the u64
     for(int byteCount = 0; byteCount < 8; byteCount++)
         highWordBytes[byteCount] = mantBytes[byteCount];
     //shift the mantissa down 1 bit so the high word contains 63 significant bits
@@ -298,10 +42,9 @@ void storeFloatVal(Float* f, long double d)
     f->mantissa.val[0] |= (1ULL << 62);  //this bit needs to be high to be normalized
     for(int i = 1; i < f->mantissa.size; i++)
         f->mantissa.val[i] = 0;
-    if(f->mantissa.size > 1)
-        f->mantissa.val[1] |= ((u64) mantBytes[0] & 1) << 62;
-    for(int i = 0; i < f->mantissa.size; i++)
-        f->mantissa.val[i] &= digitMask;
+    if(f->mantissa.size > 1 && (mantBytes[0] & 0xA))
+        f->mantissa.val[1] |= (1ULL << 62);
+    FLOAT_CHECK(*f);
 }
 
 long double getFloatVal(Float* f)
@@ -329,6 +72,7 @@ long double getFloatVal(Float* f)
         mantBytes[byteCount] = highWordBytes[byteCount];
     if(f->sign)
         mant *= -1;
+    FLOAT_CHECK(*f);
     return ldexpl(mant, realExpo);
 }
 
@@ -337,14 +81,13 @@ void floatWriteZero(Float* f)
     f->expo = 0;
     for(int i = 0; i < f->mantissa.size; i++)
         f->mantissa.val[i] = 0;
+    FLOAT_CHECK(*f);
 }
 
 void fmul(Float* dst, Float* lhs, Float* rhs)
 {
-#ifdef DEBUG
-    if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
-        puts("fmul parameters have non-matching precision!");
-#endif
+    FLOAT_CHECK(*lhs);
+    FLOAT_CHECK(*rhs);
     if(fzero(lhs) || fzero(rhs))
     {
         floatWriteZero(dst);
@@ -369,14 +112,13 @@ void fmul(Float* dst, Float* lhs, Float* rhs)
     memcpy(dst->mantissa.val, bigDest.val, sizeof(u64) * words);
     dst->sign = lhs->sign ^ rhs->sign;
     dst->expo = (long long) newExpo + expoBias;
+    FLOAT_CHECK(*dst);
 }
 
 void fadd(Float* dst, Float* lhs, Float* rhs)
 {
-#ifdef DEBUG
-    if(dst->mantissa.size != lhs->mantissa.size || lhs->mantissa.size != rhs->mantissa.size)
-        puts("fadd/fsub parameters have non-matching precision!");
-#endif
+    FLOAT_CHECK(*lhs);
+    FLOAT_CHECK(*rhs);
     //compare magnitudes (want lhs to be larger magnitude)
     //want lhs to be larger magnitude
     //simply swap the pointers if rhs is bigger
@@ -411,7 +153,10 @@ void fadd(Float* dst, Float* lhs, Float* rhs)
             bishlOne(&dst->mantissa);
             dst->expo--;
             if(shifts++ > 63 * dst->mantissa.size)
-                break;
+            {
+                floatWriteZero(dst);
+                return;
+            }
         }
     }
     else
@@ -486,6 +231,8 @@ int compareFloatMagnitude(Float* lhs, Float* rhs)
             return 1;
     }
     //both exponent and mantissas identical
+    FLOAT_CHECK(*lhs);
+    FLOAT_CHECK(*rhs);
     return 0;
 }
 
@@ -526,6 +273,8 @@ void fcopy(Float* dst, Float* src)
     dst->expo = src->expo;
     for(int i = 0; i < wordsToCopy; i++)
         dst->mantissa.val[i] = src->mantissa.val[i];
+    FLOAT_CHECK(*dst);
+    FLOAT_CHECK(*src);
 }
 
 void fuzzTest()
@@ -605,7 +354,7 @@ void floatWrite(Float* f, FILE* file)
     fwrite(f->mantissa.val, sizeof(u64), f->mantissa.size, file);
 }
 
-void floatPrint(Float* f)
+void printFloat(Float* f)
 {
     const int words = f->mantissa.size;
     MAKE_STACK_FLOAT_PREC(ten, words);
@@ -613,7 +362,7 @@ void floatPrint(Float* f)
     MAKE_STACK_FLOAT_PREC(mant, words);
     MAKE_STACK_FLOAT_PREC(temp, words);
     mant.expo = expoBias;
-    mant.sign  = false;
+    mant.sign = false;
     for(int i = 0; i < words; i++)
     {
         mant.mantissa.val[i] = f->mantissa.val[i];
@@ -629,7 +378,7 @@ void floatPrint(Float* f)
     }
     //will only work for integers that can fit in F80
     printf("0.");       //the start of every normalized number
-    int decDigits = 63 * words / (log(10) / log(2));
+    int decDigits = 63 * words * (log(2) / log(10));
     for(int i = 0; i < decDigits; i++)
     {
         bool allZero = true;
@@ -652,5 +401,9 @@ void floatPrint(Float* f)
         printf("%i", (int) getFloatVal(&mant));
     }
     printf(" * 2^%lli\n", ((long long) f->expo) - expoBias);
-    puts("Done");
+}
+
+bool isNormal(Float* f)
+{
+    return fzero(f) || ((f->mantissa.val[0] & (1ULL << 62)) ? true : false);
 }

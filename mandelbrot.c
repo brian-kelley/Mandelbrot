@@ -1,8 +1,8 @@
 #include "mandelbrot.h"
 
-Float pstride;      //size of a pixel
-Float targetX;
-Float targetY;
+FP pstride;      //size of a pixel
+FP targetX;
+FP targetY;
 Uint32* pixbuf;
 int* iterbuf;
 Uint32* colortable;
@@ -79,44 +79,31 @@ Uint32 getColor(int num)
     return colortable[((num - steepCutoff) + 3 * steepCutoff) % 360];
 }
 
-int getConvRate(Float* real, Float* imag)
+int getConvRate(FP* real, FP* imag)
 {
     //real, imag make up "c" in z = z^2 + c
     int iter = 0;
-    u64* localbuf = (u64*) alloca(8 * prec * sizeof(u64));
-    MAKE_FLOAT(zr, &localbuf[prec * 0]);
-    storeFloatVal(&zr, 0);
-    MAKE_FLOAT(zi, &localbuf[prec * 1]);
-    storeFloatVal(&zi, 0);
-    MAKE_FLOAT(zrsquare, &localbuf[prec * 2]);
-    MAKE_FLOAT(zisquare, &localbuf[prec * 3]);
-    MAKE_FLOAT(zri, &localbuf[prec * 4]);
-    MAKE_FLOAT(zrtemp, &localbuf[prec * 5]);
-    MAKE_FLOAT(zitemp, &localbuf[prec * 6]);
-    MAKE_FLOAT(mag, &localbuf[prec * 7]);
+    MAKE_STACK_FP(zr);
+    loadValue(&zr, 0);
+    MAKE_STACK_FP(zi);
+    loadValue(&zi, 0);
+    MAKE_STACK_FP(zrsquare);
+    MAKE_STACK_FP(zisquare);
+    MAKE_STACK_FP(zri);
+    MAKE_STACK_FP(mag);
     for(; iter < maxiter; iter++)
     {
-        //printf("Doing iter %i\n", iter);
-        //printf("zr = %LF\n", getFloatVal(&zr));
-        //printf("zi = %LF\n", getFloatVal(&zi));
-        fmul(&zrsquare, &zr, &zr);
-        fmul(&zisquare, &zi, &zi);
-        //printf("zrsquare = %Lf\n", getFloatVal(&zrsquare));
-        //printf("zisquare = %Lf\n", getFloatVal(&zisquare));
-        fadd(&mag, &zrsquare, &zisquare);
-        //printf("mag = %Lf\n", getFloatVal(&mag));
+        fpmul3(&zrsquare, &zr, &zr);
+        fpmul3(&zisquare, &zi, &zi);
         fmul(&zri, &zr, &zi);
-        //printf("r*i = %Lf\n", getFloatVal(&zri));
-        if(zri.expo)            //multiply by 2
-            zri.expo++;
-        fsub(&zrtemp, &zrsquare, &zisquare);
-        //printf("zrtemp = %Lf\n", getFloatVal(&zrtemp));
-        fadd(&zr, &zrtemp, real);
-        fadd(&zi, &zri, imag);
+        fpshlOne(zri);
+        fpsub3(&zr, &zrsquare, &zisquare);
+        fpadd2(&zr, real);
+        fpadd3(&zi, &zri, imag);
+        if(fpadd3(&mag, &zrsquare, &zisquare))
+            break;
         //compare mag to 4.0
         //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
-        if((long long) mag.expo - expoBias > 2)
-            break;
     }
     return iter == maxiter ? -1 : iter;
 }
@@ -158,7 +145,6 @@ void* workerFunc(void* unused)
     MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
     MAKE_STACK_FLOAT(targetXLocal);
     MAKE_STACK_FLOAT(targetYLocal);
-    bool lol = true;
     while(true)
     {
         //Fetch and increment the current work column
@@ -170,15 +156,21 @@ void* workerFunc(void* unused)
         if(xpix >= winw)
             return NULL;
         //Otherwise, compute the pixels for column xpix
+        
         storeFloatVal(&pixFloat, xpix - winw / 2);
         fmul(&addtemp, &pixFloat, &pstride);
+        printf("col %4i column offset: ", xpix);
+        printFloat(&addtemp);
         fcopy(&targetXLocal, &targetX);
         fadd(&x, &targetXLocal, &addtemp);
+        fpmul3(&x, 
         //prepare y as the minimum y of the viewport
         storeFloatVal(&pixFloat, winh / 2);
         fmul(&addtemp, &pixFloat, &pstride);
         fcopy(&targetYLocal, &targetY);
         fsub(&yiter, &targetYLocal, &addtemp);
+        //printf("col %4i xiter: ", xpix);
+        //printFloat(&x);
         for(int ypix = 0; ypix < winh; ypix++)
         {
             int convRate = getConvRate(&x, &yiter);
@@ -447,6 +439,8 @@ int main(int argc, const char** argv)
     {
         time_t start = time(NULL);
         printf("About to compute image; pstride = %.30Le\n", getFloatVal(&pstride));
+        printf("Pixel stride:");
+        printFloat(&pstride);
         drawBuf();
         writeImage();
         zoomToTarget();
