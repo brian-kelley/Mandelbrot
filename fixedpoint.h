@@ -4,6 +4,8 @@
 #define FIXEDPOINT_H
 
 /* Fixed-point number with a range (-4, 4) */
+/* Can configure the range with this value: */
+#define maxExpo 2
 
 typedef struct
 {
@@ -55,10 +57,10 @@ bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs);
 bool fpsub3(FP* restrict dst, FP* lhs, FP* rhs);
 bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs);
 
-#define fpshl(fp, num) {bishl(&fp.value, num);}
-#define fpshlOne(fp) {bishlOne(&fp.value);}
-#define fpshr(fp, num) {bishr(&fp.value, num);}
-#define fpshrOne(fp) {bishrOne(&fp.value);}
+#define fpshl(fp, num) {bishl(&(fp).value, num);}
+#define fpshlOne(fp) {bishlOne(&(fp).value);}
+#define fpshr(fp, num) {bishr(&(fp).value, num);}
+#define fpshrOne(fp) {bishrOne(&(fp).value);}
 
 int fpCompareMag(FP* lhs, FP* rhs);     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > rhs
 void loadValue(FP* fp, long double val);

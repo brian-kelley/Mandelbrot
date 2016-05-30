@@ -88,6 +88,7 @@ bool fpmul2(FP* lhs, FP* rhs)
     for(int i = 0; i < words; i++)
         lhs->value.val[i] = dst.val[i];
     lhs->sign = lhs->sign != rhs->sign;
+    fpshl(*lhs, maxExpo);
     return overflow;
 }
 
@@ -145,11 +146,11 @@ bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
     BigInt wideDst;
     wideDst.size = words * 2;
     wideDst.val = (u64*) alloca(words * 2 * sizeof(u64));
+    memset(wideDst.val, 0, words * 2 * sizeof(u64));
     for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
     {
         for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
         {
-            //do the long multiplication
             u64 hi, lo;
             longmul(lhs->value.val[i], rhs->value.val[j], &hi, &lo);
             int destWord = i + j + 1;
@@ -163,7 +164,8 @@ bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
     //copy the result into dst
     for(int i = 0; i < words; i++)
         dst->value.val[i] = wideDst.val[i];
-    lhs->sign = lhs->sign != rhs->sign;
+    dst->sign = lhs->sign != rhs->sign;
+    fpshl(*dst, maxExpo);
     return overflow;
 }
 
@@ -181,13 +183,17 @@ int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > 
 
 void loadValue(FP* fp, long double val)
 {
-    fp->value.val[0] = val * (1ULL << 63);
+    val /= (1 << maxExpo);
+    fp->value.val[0] = fabsl(val) * (1ULL << 63);
     fp->sign = val < 0;
 }
 
 long double getValue(FP* fp)
 {
-    return ((long double) fp->value.val[0] / (1ULL << 63)) * (fp->sign ? -1 : 1);
+    long double val = fp->value.val[0] / (long double) (1ULL << 63);
+    val *= fp->sign ? -1 : 1;
+    val *= (1 << maxExpo);
+    return val;
 }
 
 void fpcopy(FP* lhs, FP* rhs)
@@ -200,7 +206,7 @@ void fpcopy(FP* lhs, FP* rhs)
 
 int getApproxExpo(FP* lhs)
 {
-    int expo = 2;   //assume the maximum value
+    int expo = maxExpo;   //assume the maximum value
     int i;
     for(i = 0; i < lhs->value.size; i++)
     {

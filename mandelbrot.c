@@ -259,8 +259,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     int zoomExpo = 4;               //log_2 of zoom factor 
     FP fbestPX = FPCtor(1);
     FP fbestPY = FPCtor(1);
-    FP temp = FPCtor(1);
-    FP temp2 = FPCtor(1);
     maxiter = 300;
     while(getApproxExpo(&pstride) >= minExpo)
     {
@@ -334,8 +332,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         if(prec < getPrec(getApproxExpo(&pstride)))
         {
             increasePrecision();
-            INCR_PREC(temp);
-            INCR_PREC(temp2);
             INCR_PREC(targetX);
             INCR_PREC(targetY);
             printf("*** Increasing precision to level %i ***\n", prec);
@@ -355,8 +351,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         */
         fclose(cache);
     }
-    FPDtor(&temp);
-    FPDtor(&temp2);
     FPDtor(&fbestPX);
     FPDtor(&fbestPY);
 }
@@ -368,37 +362,28 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    FP f1 = FPCtorValue(1, 0.1);
+    FP f1 = FPCtorValue(1, -1.3);
     FP f2 = FPCtorValue(1, 0.36);
     FP f3 = FPCtor(1);
     puts("Testing 3 arg versions...");
     fpmul3(&f3, &f1, &f2);
-    printf("%Lf * %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    printf("%Lf * %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
     fpadd3(&f3, &f1, &f2);
-    printf("%Lf + %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    printf("%Lf + %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
     fpsub3(&f3, &f1, &f2);
-    printf("%Lf - %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    printf("%Lf - %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
     puts("Testing 2 arg versions...");
     printf("%Lf * ", getValue(&f1));
     fpmul2(&f1, &f3);
-    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
     printf("%Lf + ", getValue(&f1));
     fpadd2(&f1, &f3);
-    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
     printf("%Lf - ", getValue(&f1));
     fpsub2(&f1, &f3);
-    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
     return 0;
-    /*******
-     *
-     *
-     *
-     *
-     *
-     *
-     *
-     *
-     * *//////
+
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
@@ -445,7 +430,12 @@ int main(int argc, const char** argv)
         printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
     pstride = FPCtor(1);
-    getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+    //getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+//TEMPORARY
+    targetX = FPCtorValue(1, -1.71);
+    targetY = FPCtorValue(1, 1e-7);
+    loadValue(&pstride, 4.0 / winh);
+//END TEMPORARY
     prec = 1;
     CHANGE_PREC(pstride, prec);
     winw = imageWidth;
@@ -453,19 +443,6 @@ int main(int argc, const char** argv)
     initPositionVars();
     printf("Will zoom towards %.30Lf, %.30Lf\n", getValue(&targetX), getValue(&targetY));
     maxiter = 100;
-#ifdef DEBUG
-    const int testStart = 62;
-    maxiter += 20 * testStart;
-    for(int i = 0; i < testStart; i++)
-    {
-        zoomToTarget();
-        if(getPrec(getApproxExpo(&pstride)) > prec)
-        {
-            printf("debug: incrementing precision to %i at skipped image %i\n", prec + 1, i);
-            increasePrecision();
-        }
-    }
-#endif
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
