@@ -5,7 +5,7 @@
 
 /* Fixed-point number with a range (-4, 4) */
 /* Can configure the range with this value: */
-#define maxExpo 2
+#define maxExpo 5
 
 typedef struct
 {
@@ -48,14 +48,14 @@ void FPDtor(FP* fp);
 
 //Binary versions (like asm instructions, result stored in first, rhs not modified)
 //lhs and rhs can be the same
-bool fpadd2(FP* lhs, FP* rhs);
-bool fpsub2(FP* lhs, FP* rhs);
-bool fpmul2(FP* lhs, FP* rhs);
+void fpadd2(FP* lhs, FP* rhs);
+void fpsub2(FP* lhs, FP* rhs);
+void fpmul2(FP* lhs, FP* rhs);
 
 //Ternary versions (result stored in dst, lhs/rhs never modified)
-bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs);
-bool fpsub3(FP* restrict dst, FP* lhs, FP* rhs);
-bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs);
+void fpadd3(FP* restrict dst, FP* lhs, FP* rhs);
+void fpsub3(FP* restrict dst, FP* lhs, FP* rhs);
+void fpmul3(FP* restrict dst, FP* lhs, FP* rhs);
 
 #define fpshl(fp, num) {bishl(&(fp).value, num);}
 #define fpshlOne(fp) {bishlOne(&(fp).value);}

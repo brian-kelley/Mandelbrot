@@ -82,6 +82,8 @@ Uint32 getColor(int num)
 int getConvRate(FP* real, FP* imag)
 {
     //real, imag make up "c" in z = z^2 + c
+    MAKE_STACK_FP(four);
+    loadValue(&four, 4);
     int iter = 0;
     MAKE_STACK_FP(zr);
     loadValue(&zr, 0);
@@ -93,17 +95,23 @@ int getConvRate(FP* real, FP* imag)
     MAKE_STACK_FP(mag);
     for(; iter < maxiter; iter++)
     {
-        fpmul3(&zrsquare, &zr, &zr);
-        fpmul3(&zisquare, &zi, &zi);
-        fpmul3(&zri, &zr, &zi);
+        loadValue(&zrsquare, getValue(&zr) * getValue(&zr));
+        loadValue(&zisquare, getValue(&zi) * getValue(&zi));
+        loadValue(&zri, getValue(&zr) * getValue(&zi));
+        //fpmul3(&zrsquare, &zr, &zr);
+        //fpmul3(&zisquare, &zi, &zi);
+        //fpmul3(&zri, &zr, &zi);
+        //want 2 * zr * zi
         fpshlOne(zri);
-        fpsub3(&zr, &zrsquare, &zisquare);
-        fpadd2(&zr, real);
-        fpadd3(&zi, &zri, imag);
-        if(fpadd3(&mag, &zrsquare, &zisquare))
+        loadValue(&zr, getValue(&zrsquare) * getValue(&zisquare) + getValue(real));
+        //fpsub3(&zr, &zrsquare, &zisquare);
+        //fpadd2(&zr, real);
+        loadValue(&zi, getValue(&zri) + getValue(imag));
+        //fpadd3(&zi, &zri, imag);
+        loadValue(&mag, getValue(&zrsquare) + getValue(&zisquare));
+        //fpadd3(&mag, &zrsquare, &zisquare);
+        if(fpCompareMag(&mag, &four) != -1)
             break;
-        //compare mag to 4.0
-        //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
     }
     return iter == maxiter ? -1 : iter;
 }
@@ -159,7 +167,7 @@ void* workerFunc(void* unused)
         fpcopy(&x, &targetX);
         if(offset < 0)
         {
-            for(int i = 0; i < -offset; i++)
+            for(int i = offset; i < 0; i++)
                 fpsub2(&x, &pstrideLocal);
         }
         else if(offset > 0)
@@ -167,6 +175,7 @@ void* workerFunc(void* unused)
             for(int i = 0; i < offset; i++)
                 fpadd2(&x, &pstrideLocal);
         }
+        //printf("x = %.10Lf\n", getValue(&x));
         //prepare y as the minimum y of the viewport
         fpcopy(&yiter, &targetY);
         for(int i = 0; i < winh / 2; i++)
@@ -174,6 +183,7 @@ void* workerFunc(void* unused)
         for(int ypix = 0; ypix < winh; ypix++)
         {
             int convRate = getConvRate(&x, &yiter);
+            //int convRate = getConvRateLD(getValue(&x), getValue(&yiter));
             if(pixbuf)
                 pixbuf[ypix * winw + xpix] = getColor(convRate);
             iterbuf[ypix * winw + xpix] = convRate;
@@ -433,7 +443,7 @@ int main(int argc, const char** argv)
     //getInterestingLocation(deepestExpo, targetCache, useTargetCache);
 //TEMPORARY
     targetX = FPCtorValue(1, -1.71);
-    targetY = FPCtorValue(1, 1e-7);
+    targetY = FPCtorValue(1, 0);
     loadValue(&pstride, 4.0 / winh);
 //END TEMPORARY
     prec = 1;
@@ -441,7 +451,7 @@ int main(int argc, const char** argv)
     winw = imageWidth;
     winh = imageHeight;
     initPositionVars();
-    printf("Will zoom towards %.30Lf, %.30Lf\n", getValue(&targetX), getValue(&targetY));
+    printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
     maxiter = 100;
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
@@ -455,9 +465,6 @@ int main(int argc, const char** argv)
     while(getApproxExpo(&pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
-        printf("About to compute image; pstride = %.30Le\n", getValue(&pstride));
-        printf("Pixel stride:");
-        //printFloat(&pstride);
         drawBuf();
         writeImage();
         zoomToTarget();

@@ -21,12 +21,15 @@ void FPDtor(FP* fp)
     free(fp->value.val);
 }
 
-bool fpadd2(FP* lhs, FP* rhs)
+void fpadd2(FP* lhs, FP* rhs)
 {
     const int words = lhs->value.size;
-    bool overflow = false;
     if(lhs->sign != rhs->sign)
     {
+        FP* actualDst = lhs;
+        BigInt dst;
+        dst.size = words;
+        dst.val = (u64*) alloca(words * sizeof(u64));
         //subtract (can't overflow, result magnitude can only be less than either operand)
         //swap lhs/rhs pointers if |lhs| < |rhs|
         if(fpCompareMag(lhs, rhs) == -1)
@@ -35,35 +38,38 @@ bool fpadd2(FP* lhs, FP* rhs)
             lhs = rhs;
             rhs = temp;
         }
+        for(int i = 0; i < words; i++)
+            dst.val[i] = lhs->value.val[i];
         //2s complement rhs
         biTwoComplement(&rhs->value);
         //add
         for(int i = words - 1; i >= 0; i--)
-            biAddWord(&lhs->value, rhs->value.val[i], i);
+            biAddWord(&dst, rhs->value.val[i], i);
         //undo the 2s complement
         biTwoComplement(&rhs->value);
+        //copy the result into the real destination FP 
+        for(int i = 0; i < words; i++)
+            actualDst->value.val[i] = dst.val[i];
+        actualDst->sign = lhs->sign;
     }
     else
     {
         //add (can overflow)
         for(int i = words - 1; i >= 0; i--)
-            overflow |= biAddWord(&lhs->value, rhs->value.val[i], i);
+            biAddWord(&lhs->value, rhs->value.val[i], i);
     }
-    return overflow;
 }
 
-bool fpsub2(FP* lhs, FP* rhs)
+void fpsub2(FP* lhs, FP* rhs)
 {
     bool savedSign = rhs->sign;
     rhs->sign = !rhs->sign;
-    bool overflow = fpadd2(lhs, rhs);
+    fpadd2(lhs, rhs);
     rhs->sign = savedSign;
-    return overflow;
 }
 
-bool fpmul2(FP* lhs, FP* rhs)
+void fpmul2(FP* lhs, FP* rhs)
 {
-    bool overflow = false;
     const int words = lhs->value.size;
     //bimul requires a destination twice as wide as operands
     BigInt dst;
@@ -80,8 +86,8 @@ bool fpmul2(FP* lhs, FP* rhs)
             hi <<= 1;
             hi |= ((lo & (1ULL << 63)) >> 63);
             lo &= digitMask;
-            overflow |= biAddWord(&dst, lo, destWord);
-            overflow |= biAddWord(&dst, hi, destWord - 1);
+            biAddWord(&dst, lo, destWord);
+            biAddWord(&dst, hi, destWord - 1);
         }
     }
     //copy the result into lhs
@@ -89,12 +95,10 @@ bool fpmul2(FP* lhs, FP* rhs)
         lhs->value.val[i] = dst.val[i];
     lhs->sign = lhs->sign != rhs->sign;
     fpshl(*lhs, maxExpo);
-    return overflow;
 }
 
-bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
+void fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
 {
-    bool overflow = false;
     if(lhs->sign != rhs->sign)
     {
         //subtract (can't overflow, result magnitude can only be less than either operand)
@@ -120,27 +124,23 @@ bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
     else
     {
         //add (can overflow)
-        //copy rhs into dst
         for(int i = 0; i < lhs->value.size; i++)
             dst->value.val[i] = lhs->value.val[i];
         for(int i = lhs->value.size - 1; i >= 0; i--)
-            overflow |= biAddWord(&dst->value, rhs->value.val[i], i);
+            biAddWord(&dst->value, rhs->value.val[i], i);
     }
-    return overflow;
 }
 
-bool fpsub3(FP* restrict dst, FP* lhs, FP* rhs)
+void fpsub3(FP* restrict dst, FP* lhs, FP* rhs)
 {
     bool savedSign = rhs->sign;
     rhs->sign = !rhs->sign;
-    bool overflow = fpadd3(dst, lhs, rhs);
+    fpadd3(dst, lhs, rhs);
     rhs->sign = savedSign;
-    return overflow;
 }
 
-bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
+void fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
 {
-    bool overflow = false;
     const int words = lhs->value.size;
     //bimul requires a destination twice as wide as operands
     BigInt wideDst;
@@ -157,8 +157,8 @@ bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
             hi <<= 1;
             hi |= ((lo & (1ULL << 63)) >> 63);
             lo &= digitMask;
-            overflow |= biAddWord(&wideDst, lo, destWord);
-            overflow |= biAddWord(&wideDst, hi, destWord - 1);
+            biAddWord(&wideDst, lo, destWord);
+            biAddWord(&wideDst, hi, destWord - 1);
         }
     }
     //copy the result into dst
@@ -166,7 +166,6 @@ bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
         dst->value.val[i] = wideDst.val[i];
     dst->sign = lhs->sign != rhs->sign;
     fpshl(*dst, maxExpo);
-    return overflow;
 }
 
 int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > rhs
@@ -183,16 +182,16 @@ int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > 
 
 void loadValue(FP* fp, long double val)
 {
-    val /= (1 << maxExpo);
-    fp->value.val[0] = fabsl(val) * (1ULL << 63);
+    val /= (1 << (maxExpo - 1));
+    fp->value.val[0] = fabsl(val) * (1ULL << 62);
     fp->sign = val < 0;
 }
 
 long double getValue(FP* fp)
 {
-    long double val = fp->value.val[0] / (long double) (1ULL << 63);
+    long double val = fp->value.val[0] / (long double) (1ULL << 62);
     val *= fp->sign ? -1 : 1;
-    val *= (1 << maxExpo);
+    val *= (1 << (maxExpo - 1));
     return val;
 }
 
