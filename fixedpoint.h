@@ -56,12 +56,16 @@ bool fpsub3(FP* restrict dst, FP* lhs, FP* rhs);
 bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs);
 
 #define fpshl(fp, num) {bishl(&fp.value, num);}
-#define fpshlOne(fp, num) {bishlOne(&fp.value);}
+#define fpshlOne(fp) {bishlOne(&fp.value);}
 #define fpshr(fp, num) {bishr(&fp.value, num);}
-#define fpshrOne(fp, num) {bishrOne(&fp.value);}
+#define fpshrOne(fp) {bishrOne(&fp.value);}
 
 int fpCompareMag(FP* lhs, FP* rhs);     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > rhs
 void loadValue(FP* fp, long double val);
 long double getValue(FP* fp);
+void fpcopy(FP* lhs, FP* rhs);
+int getApproxExpo(FP* lhs);
+
+void arithmeticTest();
 
 #endif

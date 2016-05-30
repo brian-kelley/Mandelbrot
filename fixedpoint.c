@@ -13,11 +13,12 @@ FP FPCtorValue(int prec, long double val)
 {
     FP rv = FPCtor(prec);
     loadValue(&rv, val);
+    return rv;
 }
 
 void FPDtor(FP* fp)
 {
-    free(rv.value.val);
+    free(fp->value.val);
 }
 
 bool fpadd2(FP* lhs, FP* rhs)
@@ -29,14 +30,18 @@ bool fpadd2(FP* lhs, FP* rhs)
         //subtract (can't overflow, result magnitude can only be less than either operand)
         //swap lhs/rhs pointers if |lhs| < |rhs|
         if(fpCompareMag(lhs, rhs) == -1)
-            SWAP(lhs, rhs);
+        {
+            FP* temp = lhs;
+            lhs = rhs;
+            rhs = temp;
+        }
         //2s complement rhs
-        biTwoComplement(rhs->value);
+        biTwoComplement(&rhs->value);
         //add
         for(int i = words - 1; i >= 0; i--)
             biAddWord(&lhs->value, rhs->value.val[i], i);
         //undo the 2s complement
-        biTwoComplement(rhs->value);
+        biTwoComplement(&rhs->value);
     }
     else
     {
@@ -50,6 +55,7 @@ bool fpadd2(FP* lhs, FP* rhs)
 bool fpsub2(FP* lhs, FP* rhs)
 {
     bool savedSign = rhs->sign;
+    rhs->sign = !rhs->sign;
     bool overflow = fpadd2(lhs, rhs);
     rhs->sign = savedSign;
     return overflow;
@@ -69,13 +75,13 @@ bool fpmul2(FP* lhs, FP* rhs)
         {
             //do the long multiplication
             u64 hi, lo;
-            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
+            longmul(lhs->value.val[i], rhs->value.val[j], &hi, &lo);
             int destWord = i + j + 1;
             hi <<= 1;
             hi |= ((lo & (1ULL << 63)) >> 63);
             lo &= digitMask;
-            overflow |= biAddWord(dst, lo, destWord);
-            overflow |= biAddWord(dst, hi, destWord - 1);
+            overflow |= biAddWord(&dst, lo, destWord);
+            overflow |= biAddWord(&dst, hi, destWord - 1);
         }
     }
     //copy the result into lhs
@@ -93,17 +99,22 @@ bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
         //subtract (can't overflow, result magnitude can only be less than either operand)
         //swap lhs/rhs pointers if |lhs| < |rhs|
         if(fpCompareMag(lhs, rhs) == -1)
-            SWAP(lhs, rhs);
+        {
+            FP* temp = lhs;
+            lhs = rhs;
+            rhs = temp;
+        }
         //copy lhs words into dst
         for(int i = 0; i < lhs->value.size; i++)
             dst->value.val[i] = lhs->value.val[i];
         //2s complement rhs
-        biTwoComplement(rhs->value);
+        biTwoComplement(&rhs->value);
         //add
         for(int i = lhs->value.size - 1; i >= 0; i--)
             biAddWord(&dst->value, rhs->value.val[i], i);
         //undo the 2s complement
-        biTwoComplement(rhs->value);
+        biTwoComplement(&rhs->value);
+        dst->sign = lhs->sign;
     }
     else
     {
@@ -112,7 +123,7 @@ bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
         for(int i = 0; i < lhs->value.size; i++)
             dst->value.val[i] = lhs->value.val[i];
         for(int i = lhs->value.size - 1; i >= 0; i--)
-            overflow |= biAddWord(&rhs->value, rhs->value.val[i], i);
+            overflow |= biAddWord(&dst->value, rhs->value.val[i], i);
     }
     return overflow;
 }
@@ -120,6 +131,7 @@ bool fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
 bool fpsub3(FP* restrict dst, FP* lhs, FP* rhs)
 {
     bool savedSign = rhs->sign;
+    rhs->sign = !rhs->sign;
     bool overflow = fpadd3(dst, lhs, rhs);
     rhs->sign = savedSign;
     return overflow;
@@ -139,13 +151,13 @@ bool fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
         {
             //do the long multiplication
             u64 hi, lo;
-            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
+            longmul(lhs->value.val[i], rhs->value.val[j], &hi, &lo);
             int destWord = i + j + 1;
             hi <<= 1;
             hi |= ((lo & (1ULL << 63)) >> 63);
             lo &= digitMask;
-            overflow |= biAddWord(wideDst, lo, destWord);
-            overflow |= biAddWord(wideDst, hi, destWord - 1);
+            overflow |= biAddWord(&wideDst, lo, destWord);
+            overflow |= biAddWord(&wideDst, hi, destWord - 1);
         }
     }
     //copy the result into dst
@@ -176,4 +188,44 @@ void loadValue(FP* fp, long double val)
 long double getValue(FP* fp)
 {
     return ((long double) fp->value.val[0] / (1ULL << 63)) * (fp->sign ? -1 : 1);
+}
+
+void fpcopy(FP* lhs, FP* rhs)
+{
+    int words = min(lhs->value.size, rhs->value.size);
+    for(int i = 0; i < words; i++)
+        lhs->value.val[i] = rhs->value.val[i];
+    lhs->sign = rhs->sign;
+}
+
+int getApproxExpo(FP* lhs)
+{
+    int expo = 2;   //assume the maximum value
+    int i;
+    for(i = 0; i < lhs->value.size; i++)
+    {
+        if(lhs->value.val[i] == 0)
+            expo -= 63;
+        else
+            break;
+    }
+    if(i < lhs->value.size)
+    {
+        u64 word = lhs->value.val[i];
+        while((word & (1ULL << 62)) == 0)
+        {
+            expo--;
+            word <<= 1;
+        }
+    }
+    return expo;
+}
+
+void arithmeticTest()
+{
+    for(u64 i = 0;; i++)
+    {
+        if(i % 1000000 == 999999)
+            printf("%llu operand combinations tested.\n", i);
+    }
 }

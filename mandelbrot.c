@@ -18,7 +18,7 @@ int winh;
 void initPositionVars()
 {
     const long double startw = 4;
-    pstride = floatLoad(1, startw / winw);  //pixels are always exactly square, no separate x and y
+    pstride = FPCtorValue(1, startw / winw);  //pixels are always exactly square, no separate x and y
 }
 
 void increasePrecision()
@@ -43,8 +43,8 @@ void writeImage()
 
 void zoomToTarget()
 {
-    //update pixel stride
-    pstride.expo--;     //hard-code the 2x zoom factor
+    //update pixel stride (divide by 2)
+    fpshrOne(pstride);
 }
 
 void initColorTable()
@@ -95,7 +95,7 @@ int getConvRate(FP* real, FP* imag)
     {
         fpmul3(&zrsquare, &zr, &zr);
         fpmul3(&zisquare, &zi, &zi);
-        fmul(&zri, &zr, &zi);
+        fpmul3(&zri, &zr, &zi);
         fpshlOne(zri);
         fpsub3(&zr, &zrsquare, &zisquare);
         fpadd2(&zr, real);
@@ -139,12 +139,11 @@ int getConvRateLD(long double real, long double imag)
 
 void* workerFunc(void* unused)
 {
-    MAKE_STACK_FLOAT(pixFloat);
-    MAKE_STACK_FLOAT(x);
-    MAKE_STACK_FLOAT(yiter);
-    MAKE_STACK_FLOAT(addtemp);  //need a temporary destination for iter += pstride
-    MAKE_STACK_FLOAT(targetXLocal);
-    MAKE_STACK_FLOAT(targetYLocal);
+    MAKE_STACK_FP(pixFloat);
+    MAKE_STACK_FP(x);
+    MAKE_STACK_FP(yiter);
+    MAKE_STACK_FP(pstrideLocal);
+    fpcopy(&pstrideLocal, &pstride);
     while(true)
     {
         //Fetch and increment the current work column
@@ -156,29 +155,29 @@ void* workerFunc(void* unused)
         if(xpix >= winw)
             return NULL;
         //Otherwise, compute the pixels for column xpix
-        
-        storeFloatVal(&pixFloat, xpix - winw / 2);
-        fmul(&addtemp, &pixFloat, &pstride);
-        printf("col %4i column offset: ", xpix);
-        printFloat(&addtemp);
-        fcopy(&targetXLocal, &targetX);
-        fadd(&x, &targetXLocal, &addtemp);
-        fpmul3(&x, 
+        int offset = xpix - winw / 2;
+        fpcopy(&x, &targetX);
+        if(offset < 0)
+        {
+            for(int i = 0; i < -offset; i++)
+                fpsub2(&x, &pstrideLocal);
+        }
+        else if(offset > 0)
+        {
+            for(int i = 0; i < offset; i++)
+                fpadd2(&x, &pstrideLocal);
+        }
         //prepare y as the minimum y of the viewport
-        storeFloatVal(&pixFloat, winh / 2);
-        fmul(&addtemp, &pixFloat, &pstride);
-        fcopy(&targetYLocal, &targetY);
-        fsub(&yiter, &targetYLocal, &addtemp);
-        //printf("col %4i xiter: ", xpix);
-        //printFloat(&x);
+        fpcopy(&yiter, &targetY);
+        for(int i = 0; i < winh / 2; i++)
+            fpsub2(&yiter, &pstrideLocal);
         for(int ypix = 0; ypix < winh; ypix++)
         {
             int convRate = getConvRate(&x, &yiter);
             if(pixbuf)
                 pixbuf[ypix * winw + xpix] = getColor(convRate);
             iterbuf[ypix * winw + xpix] = convRate;
-            fcopy(&addtemp, &yiter);
-            fadd(&yiter, &addtemp, &pstride);
+            fpadd2(&yiter, &pstrideLocal);
         }
     }
     return NULL;
@@ -240,31 +239,32 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     if(cacheFile && useCache)
     {
         cache = fopen(cacheFile, "r");
+        /*
         targetX = floatRead(cache);
         targetY = floatRead(cache);
+        */
         fclose(cache);
         return;
     }
-    targetX = floatLoad(1, 0);
-    targetY = floatLoad(1, 0);
+    targetX = FPCtorValue(1, 0);
+    targetY = FPCtorValue(1, 0);
     //make a temporary iteration count buffer
     int gpx = 16;                       //size, in pixels, of GIL iteration buffer (must be PoT)
     winw = gpx;
     winh = gpx;
     iterbuf = (int*) malloc(gpx * gpx * sizeof(int));
     prec = 1;
-    long double initViewport = 4;
-    storeFloatVal(&pstride, initViewport / gpx);
+    long double initViewport = 4.0;
+    loadValue(&pstride, initViewport / gpx);
     int zoomExpo = 4;               //log_2 of zoom factor 
-    Float fbestPX = FloatCtor(1);
-    Float fbestPY = FloatCtor(1);
-    Float temp = FloatCtor(1);
-    Float temp2 = FloatCtor(1);
-    Float halfSize = floatLoad(1, gpx / 2);
+    FP fbestPX = FPCtor(1);
+    FP fbestPY = FPCtor(1);
+    FP temp = FPCtor(1);
+    FP temp2 = FPCtor(1);
     maxiter = 300;
-    while((long long) pstride.expo - expoBias >= minExpo)
+    while(getApproxExpo(&pstride) >= minExpo)
     {
-        printf("Pixel stride = %Le, iter cap is %i\n", getFloatVal(&pstride), maxiter);
+        printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
         //drawBuf() only depends on pixel stride, which is already set 
         drawBuf();
         int bestPX;
@@ -306,27 +306,36 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             puts("getInterestingLocation() frame contains all the same iteration count!");
             break;
         }
-        storeFloatVal(&fbestPX, bestPX - gpx / 2);
-        storeFloatVal(&fbestPY, bestPY - gpx / 2);
-        //update targetX, targetY to the exact position of the best pixel 
-        FLOAT_CHECK(pstride);
-        FLOAT_CHECK(fbestPX);
-        fmul(&temp, &fbestPX, &pstride);
-        FLOAT_CHECK(temp);
-        fcopy(&temp2, &targetX);
-        fadd(&targetX, &temp, &temp2);
-        fmul(&temp, &fbestPY, &pstride);
-        fcopy(&temp2, &targetY);
-        fadd(&targetY, &temp, &temp2);
+        int xmove = bestPX - gpx / 2;
+        int ymove = bestPY - gpx / 2;
+        if(xmove < 0)
+        {
+            for(int i = 0; i < -xmove; i++)
+                fpsub2(&targetX, &pstride);
+        }
+        else if(xmove > 0)
+        {
+            for(int i = 0; i < xmove; i++)
+                fpadd2(&targetX, &pstride);
+        }
+        if(ymove < 0)
+        {
+            for(int i = 0; i < -ymove; i++)
+                fpsub2(&targetY, &pstride);
+        }
+        else if(xmove > 0)
+        {
+            for(int i = 0; i < ymove; i++)
+                fpadd2(&targetY, &pstride);
+        }
         //zoom in according to the PoT zoom factor defined above
-        pstride.expo -= zoomExpo;
+        fpshr(pstride, zoomExpo);
         //set screen position to the best pixel
-        if(prec < getPrec(pstride.expo))
+        if(prec < getPrec(getApproxExpo(&pstride)))
         {
             increasePrecision();
             INCR_PREC(temp);
             INCR_PREC(temp2);
-            INCR_PREC(halfSize);
             INCR_PREC(targetX);
             INCR_PREC(targetY);
             printf("*** Increasing precision to level %i ***\n", prec);
@@ -340,25 +349,56 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     {
         cache = fopen(cacheFile, "w");
         //write targetX, targetY to the cache file
+        /*
         floatWrite(&targetX, cache);
         floatWrite(&targetY, cache);
+        */
         fclose(cache);
     }
-    FloatDtor(&temp);
-    FloatDtor(&temp2);
-    FloatDtor(&fbestPX);
-    FloatDtor(&fbestPY);
-    FloatDtor(&halfSize);
+    FPDtor(&temp);
+    FPDtor(&temp2);
+    FPDtor(&fbestPX);
+    FPDtor(&fbestPY);
 }
 
 int getPrec(int expo)
 {
-    double unbiased = (long long) expo - expoBias;
-    return ceil(-unbiased / 60);
+    return ceil(-expo / 60);
 }
 
 int main(int argc, const char** argv)
 {
+    FP f1 = FPCtorValue(1, 0.1);
+    FP f2 = FPCtorValue(1, 0.36);
+    FP f3 = FPCtor(1);
+    puts("Testing 3 arg versions...");
+    fpmul3(&f3, &f1, &f2);
+    printf("%Lf * %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    fpadd3(&f3, &f1, &f2);
+    printf("%Lf + %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    fpsub3(&f3, &f1, &f2);
+    printf("%Lf - %Lf = %Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
+    puts("Testing 2 arg versions...");
+    printf("%Lf * ", getValue(&f1));
+    fpmul2(&f1, &f3);
+    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    printf("%Lf + ", getValue(&f1));
+    fpadd2(&f1, &f3);
+    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    printf("%Lf - ", getValue(&f1));
+    fpsub2(&f1, &f3);
+    printf("%Lf = %Lf\n", getValue(&f3), getValue(&f1));
+    return 0;
+    /*******
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     *
+     * *//////
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
@@ -404,14 +444,14 @@ int main(int argc, const char** argv)
     else if(targetCache)
         printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
-    pstride = FloatCtor(1);
+    pstride = FPCtor(1);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     prec = 1;
     CHANGE_PREC(pstride, prec);
     winw = imageWidth;
     winh = imageHeight;
     initPositionVars();
-    printf("Will zoom towards %.30Lf, %.30Lf\n", getFloatVal(&targetX), getFloatVal(&targetY));
+    printf("Will zoom towards %.30Lf, %.30Lf\n", getValue(&targetX), getValue(&targetY));
     maxiter = 100;
 #ifdef DEBUG
     const int testStart = 62;
@@ -419,7 +459,7 @@ int main(int argc, const char** argv)
     for(int i = 0; i < testStart; i++)
     {
         zoomToTarget();
-        if(getPrec(pstride.expo) > prec)
+        if(getPrec(getApproxExpo(&pstride)) > prec)
         {
             printf("debug: incrementing precision to %i at skipped image %i\n", prec + 1, i);
             increasePrecision();
@@ -435,18 +475,18 @@ int main(int argc, const char** argv)
     filecount = testStart;
 #endif
     //resume file: filecount, last maxiter, prec
-    while((long long) pstride.expo - expoBias >= deepestExpo)
+    while(getApproxExpo(&pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
-        printf("About to compute image; pstride = %.30Le\n", getFloatVal(&pstride));
+        printf("About to compute image; pstride = %.30Le\n", getValue(&pstride));
         printf("Pixel stride:");
-        printFloat(&pstride);
+        //printFloat(&pstride);
         drawBuf();
         writeImage();
         zoomToTarget();
         recomputeMaxIter(1);
         int timeDiff = time(NULL) - start;
-        if(getPrec(pstride.expo) > prec)
+        if(getPrec(getApproxExpo(&pstride)) > prec)
         {
             increasePrecision();
             printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
