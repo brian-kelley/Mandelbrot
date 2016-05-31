@@ -27,8 +27,7 @@ typedef struct
 
 #define INCR_PREC(f) \
     f.value.size++; \
-    f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64));\
-    f.value.val[f.value.size - 1] = 0;
+    f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64));
 
 #define CHANGE_PREC(f, newPrec) \
 { \
@@ -67,6 +66,9 @@ void loadValue(FP* fp, long double val);
 long double getValue(FP* fp);
 void fpcopy(FP* lhs, FP* rhs);
 int getApproxExpo(FP* lhs);
+
+void fpWrite(FP* value, FILE* handle);
+FP fpRead(FILE* handle);         //heap allocates space for value
 
 void fuzzTest();
 

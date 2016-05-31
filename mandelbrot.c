@@ -21,14 +21,6 @@ void initPositionVars()
     pstride = FPCtorValue(1, startw / winw);  //pixels are always exactly square, no separate x and y
 }
 
-void increasePrecision()
-{
-    //reallocate space for the persistent Float variables
-    //INCR_PREC macro copies significant words into reallocated space and updates mantissa size
-    INCR_PREC(pstride);
-    prec++;
-}
-
 void writeImage()
 {
     char name[32];
@@ -213,7 +205,7 @@ void drawBuf()
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 25 * zoomExpo;
+    const int normalIncrease = 40 * zoomExpo;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -244,10 +236,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     if(cacheFile && useCache)
     {
         cache = fopen(cacheFile, "r");
-        /*
-        targetX = floatRead(cache);
-        targetY = floatRead(cache);
-        */
+        targetX = fpRead(cache);
+        targetY = fpRead(cache);
         fclose(cache);
         return;
     }
@@ -273,7 +263,10 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         int bestPX;
         int bestPY;
         int bestIters = 0;
+        int numBest = 0;
         u64 itersum = 0;
+        //Find the maximum non-converging iteration count,
+        //and then randomly pick a point with that iter count to be target
         for(int i = 0; i < gpx; i++)
         {
             for(int j = 0; j < gpx; j++)
@@ -281,9 +274,25 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
                 itersum += iterbuf[i + j * gpx];
                 if(iterbuf[i + j * gpx] > bestIters)
                 {
-                    bestPX = i;
-                    bestPY = j;
                     bestIters = iterbuf[i + j * gpx];
+                    numBest = 1;
+                }
+                else if(iterbuf[i + j * gpx] == bestIters)
+                    numBest++;
+            }
+        }
+        int targetChoice = rand() % numBest;
+        for(int i = 0; i < gpx; i++)
+        {
+            for(int j = 0; j < gpx; j++)
+            {
+                if(iterbuf[i + j * gpx] == bestIters)
+                {
+                    if(--targetChoice == 0)
+                    {
+                        bestPX = i;
+                        bestPY = j;
+                    }
                 }
             }
         }
@@ -336,9 +345,10 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         //set screen position to the best pixel
         if(prec < getPrec(getApproxExpo(&pstride)))
         {
-            increasePrecision();
+            INCR_PREC(pstride);
             INCR_PREC(targetX);
             INCR_PREC(targetY);
+            prec++;
             printf("*** Increasing precision to level %i ***\n", prec);
         }
     }
@@ -350,10 +360,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     {
         cache = fopen(cacheFile, "w");
         //write targetX, targetY to the cache file
-        /*
-        floatWrite(&targetX, cache);
-        floatWrite(&targetY, cache);
-        */
+        fpWrite(&targetX, cache);
+        fpWrite(&targetY, cache);
         fclose(cache);
     }
     FPDtor(&fbestPX);
@@ -362,35 +370,11 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 int getPrec(int expo)
 {
-    return ceil(-expo / 60);
+    return ceil(-expo / 45) + 1;
 }
 
 int main(int argc, const char** argv)
 {
-    /*
-    FP f1 = FPCtorValue(1, 0.04);
-    FP f2 = FPCtorValue(1, -0.36);
-    FP f3 = FPCtor(1);
-    puts("Testing 3 arg versions...");
-    fpmul3(&f3, &f1, &f2);
-    printf("%Lf * %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
-    fpadd3(&f3, &f1, &f2);
-    printf("%Lf + %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
-    fpsub3(&f3, &f1, &f2);
-    printf("%Lf - %Lf = %.10Lf\n", getValue(&f1), getValue(&f2), getValue(&f3));
-    puts("Testing 2 arg versions...");
-    printf("%Lf * ", getValue(&f1));
-    fpmul2(&f1, &f3);
-    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
-    printf("%Lf + ", getValue(&f1));
-    fpadd2(&f1, &f3);
-    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
-    printf("%Lf - ", getValue(&f1));
-    fpsub2(&f1, &f3);
-    printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
-    return 0;
-    */
-
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
@@ -437,12 +421,7 @@ int main(int argc, const char** argv)
         printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
     pstride = FPCtor(1);
-    //getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-//TEMPORARY
-    targetX = FPCtorValue(1, -1.71);
-    targetY = FPCtorValue(1, 0);
-    loadValue(&pstride, 4.0 / winh);
-//END TEMPORARY
+    getInterestingLocation(deepestExpo, targetCache, useTargetCache);
     prec = 1;
     CHANGE_PREC(pstride, prec);
     winw = imageWidth;
@@ -455,9 +434,6 @@ int main(int argc, const char** argv)
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
     iterbuf = (int*) malloc(sizeof(int) * winw * winh);
     filecount = 0;
-#ifdef DEBUG
-    filecount = testStart;
-#endif
     //resume file: filecount, last maxiter, prec
     while(getApproxExpo(&pstride) >= deepestExpo)
     {
@@ -469,7 +445,8 @@ int main(int argc, const char** argv)
         int timeDiff = time(NULL) - start;
         if(getPrec(getApproxExpo(&pstride)) > prec)
         {
-            increasePrecision();
+            INCR_PREC(pstride);
+            prec++;
             printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
         }
         printf("Image #%i took %i seconds. ", filecount - 1, timeDiff);

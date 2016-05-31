@@ -1,4 +1,3 @@
-//#define DEBUG
 #include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
@@ -20,7 +19,6 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 /* High level main loop functions */
 void drawBuf();             //compute iteration count & color for every pixel in viewport
 void writeImage();          //use lodePNG to write out the current conv-rate buffer
-void increasePrecision();   //increment the precision of persistent Float values
 void recomputeMaxIter(int zoomExpo);    //update iteration cap between zooms
 void saveResumeState(const char* fname);
 void loadResumeState(const char* fname);

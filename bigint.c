@@ -26,7 +26,7 @@ void BigIntDtor(BigInt* bi)
 
 bool biAddWord(BigInt* bi, u64 word, int position)
 {
-    assert((word & carryMask) == 0);
+    word &= digitMask;
     bi->val[position] += word;
     u64 carry = bi->val[position] & carryMask;
     bi->val[position] &= digitMask;
@@ -41,9 +41,6 @@ bool biAddWord(BigInt* bi, u64 word, int position)
         else
             break;
     }
-    //debug
-    for(int i = 0; i < bi->size; i++)
-        bi->val[i] &= digitMask;
     return carry;
 }
 

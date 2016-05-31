@@ -156,10 +156,31 @@ void loadValue(FP* fp, long double val)
 
 long double getValue(FP* fp)
 {
-    long double val = fp->value.val[0] / (long double) (1ULL << 62);
-    val *= fp->sign ? -1 : 1;
-    val *= (1 << (maxExpo - 1));
-    return val;
+    if(fp->value.val[0])
+    {
+        long double val = fp->value.val[0] / (long double) (1ULL << 62);
+        val *= fp->sign ? -1 : 1;
+        val *= (1 << (maxExpo - 1));
+        return val;
+    }
+    else
+    {
+        int wordShift;
+        for(wordShift = 0; wordShift < fp->value.size; wordShift++)
+        {
+            if(fp->value.val[wordShift])
+                break;
+        }
+        if(wordShift == fp->value.size)
+            return 0;
+        long double val = fp->value.val[wordShift] / (long double) (1ULL << 62);
+        val *= fp->sign ? -1 : 1;
+        int expo;
+        long double mant = frexpl(val, &expo);
+        expo += (maxExpo - 1);
+        expo -= 63 * wordShift;
+        return ldexpl(mant, expo);
+    }
 }
 
 void fpcopy(FP* lhs, FP* rhs)
@@ -259,3 +280,22 @@ void fuzzTest()
     printf("Failed after %llu operand combinations.\n", tested);
     exit(EXIT_FAILURE);
 }
+
+void fpWrite(FP* fp, FILE* handle)
+{
+    //size (u32), then sign (u8), then value (series of u64)
+    fwrite(&fp->value.size, sizeof(unsigned), 1, handle);
+    fwrite(&fp->sign, sizeof(bool), 1, handle);
+    fwrite(fp->value.val, sizeof(u64), fp->value.size, handle);
+}
+
+FP fpRead(FILE* handle)
+{
+    unsigned size;
+    fread(&size, sizeof(unsigned), 1, handle);
+    FP fp = FPCtor(size);
+    fread(&fp.sign, sizeof(bool), 1, handle);
+    fread(fp.value.val, sizeof(u64), size, handle);
+    return fp;
+}
+
