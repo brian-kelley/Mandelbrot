@@ -43,8 +43,7 @@ void fpadd2(FP* lhs, FP* rhs)
         //2s complement rhs
         biTwoComplement(&rhs->value);
         //add
-        for(int i = words - 1; i >= 0; i--)
-            biAddWord(&dst, rhs->value.val[i], i);
+        biadd(&dst, &lhs->value, &rhs->value);
         //undo the 2s complement
         biTwoComplement(&rhs->value);
         //copy the result into the real destination FP 
@@ -72,27 +71,12 @@ void fpmul2(FP* lhs, FP* rhs)
 {
     const int words = lhs->value.size;
     //bimul requires a destination twice as wide as operands
-    BigInt dst;
-    dst.size = words * 2;
-    dst.val = (u64*) alloca(words * 2 * sizeof(u64));
-    for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
-    {
-        for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
-        {
-            //do the long multiplication
-            u64 hi, lo;
-            longmul(lhs->value.val[i], rhs->value.val[j], &hi, &lo);
-            int destWord = i + j + 1;
-            hi <<= 1;
-            hi |= ((lo & (1ULL << 63)) >> 63);
-            lo &= digitMask;
-            biAddWord(&dst, lo, destWord);
-            biAddWord(&dst, hi, destWord - 1);
-        }
-    }
-    //copy the result into lhs
+    BigInt wideDst;
+    wideDst.size = words * 2;
+    wideDst.val = (u64*) alloca(words * 2 * sizeof(u64));
+    bimul(&wideDst, &lhs->value, &rhs->value);
     for(int i = 0; i < words; i++)
-        lhs->value.val[i] = dst.val[i];
+        lhs->value.val[i] = wideDst.val[i];
     lhs->sign = lhs->sign != rhs->sign;
     fpshl(*lhs, maxExpo);
 }
@@ -123,11 +107,8 @@ void fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
     }
     else
     {
-        //add (can overflow)
-        for(int i = 0; i < lhs->value.size; i++)
-            dst->value.val[i] = lhs->value.val[i];
-        for(int i = lhs->value.size - 1; i >= 0; i--)
-            biAddWord(&dst->value, rhs->value.val[i], i);
+        biadd(&dst->value, &lhs->value, &rhs->value);
+        dst->sign = lhs->sign;
     }
 }
 
@@ -146,21 +127,7 @@ void fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
     BigInt wideDst;
     wideDst.size = words * 2;
     wideDst.val = (u64*) alloca(words * 2 * sizeof(u64));
-    memset(wideDst.val, 0, words * 2 * sizeof(u64));
-    for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
-    {
-        for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
-        {
-            u64 hi, lo;
-            longmul(lhs->value.val[i], rhs->value.val[j], &hi, &lo);
-            int destWord = i + j + 1;
-            hi <<= 1;
-            hi |= ((lo & (1ULL << 63)) >> 63);
-            lo &= digitMask;
-            biAddWord(&wideDst, lo, destWord);
-            biAddWord(&wideDst, hi, destWord - 1);
-        }
-    }
+    bimul(&wideDst, &lhs->value, &rhs->value);
     //copy the result into dst
     for(int i = 0; i < words; i++)
         dst->value.val[i] = wideDst.val[i];
@@ -233,4 +200,62 @@ void arithmeticTest()
         if(i % 1000000 == 999999)
             printf("%llu operand combinations tested.\n", i);
     }
+}
+
+void fuzzTest()
+{
+    const long double tol = 1e-5;
+    srand(clock());
+    int prec = 1;
+    MAKE_STACK_FP(op1);
+    MAKE_STACK_FP(op2);
+    MAKE_STACK_FP(sum);
+    MAKE_STACK_FP(diff);
+    MAKE_STACK_FP(prod);
+    u64 tested = 0;
+    while(true)
+    {
+        long double op[2];
+        for(int i = 0; i < 2; i++)
+        {
+            int ex = -4 + rand() % 7;
+            long double mant = (long double) 1.0 / RAND_MAX * rand();
+            if(rand() & 0x10)
+                mant *= -1;
+            op[i] = ldexpl(mant, ex);
+        }
+        loadValue(&op1, op[0]);
+        loadValue(&op2, op[1]);
+        fpadd3(&sum, &op1, &op2);
+        fpsub3(&diff, &op1, &op2);
+        fpmul3(&prod, &op1, &op2);
+        {
+            long double actual = op[0] + op[1];
+            if(fabsl((getValue(&sum) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&sum));
+                break;
+            }
+        }
+        {
+            long double actual = op[0] - op[1];
+            if(fabsl((getValue(&diff) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&diff));
+                break;
+            }
+        }
+        {
+            long double actual = op[0] * op[1];
+            if(fabsl((getValue(&prod) - actual) / actual) > tol)
+            {
+                printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&prod));
+                break;
+            }
+        }
+        if(tested++ % 1000000 == 999999)
+            printf("%llu operand combinations tested.\n", tested);
+    }
+    printf("Failed after %llu operand combinations.\n", tested);
+    exit(EXIT_FAILURE);
 }

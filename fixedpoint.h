@@ -68,6 +68,6 @@ long double getValue(FP* fp);
 void fpcopy(FP* lhs, FP* rhs);
 int getApproxExpo(FP* lhs);
 
-void arithmeticTest();
+void fuzzTest();
 
 #endif

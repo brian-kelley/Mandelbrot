@@ -84,7 +84,6 @@ int getConvRate(FP* real, FP* imag)
     //real, imag make up "c" in z = z^2 + c
     MAKE_STACK_FP(four);
     loadValue(&four, 4);
-    int iter = 0;
     MAKE_STACK_FP(zr);
     loadValue(&zr, 0);
     MAKE_STACK_FP(zi);
@@ -93,24 +92,19 @@ int getConvRate(FP* real, FP* imag)
     MAKE_STACK_FP(zisquare);
     MAKE_STACK_FP(zri);
     MAKE_STACK_FP(mag);
+    int iter = 0;
     for(; iter < maxiter; iter++)
     {
-        loadValue(&zrsquare, getValue(&zr) * getValue(&zr));
-        loadValue(&zisquare, getValue(&zi) * getValue(&zi));
-        loadValue(&zri, getValue(&zr) * getValue(&zi));
-        //fpmul3(&zrsquare, &zr, &zr);
-        //fpmul3(&zisquare, &zi, &zi);
-        //fpmul3(&zri, &zr, &zi);
+        fpmul3(&zrsquare, &zr, &zr);
+        fpmul3(&zisquare, &zi, &zi);
+        fpmul3(&zri, &zr, &zi);
         //want 2 * zr * zi
         fpshlOne(zri);
-        loadValue(&zr, getValue(&zrsquare) * getValue(&zisquare) + getValue(real));
-        //fpsub3(&zr, &zrsquare, &zisquare);
-        //fpadd2(&zr, real);
-        loadValue(&zi, getValue(&zri) + getValue(imag));
-        //fpadd3(&zi, &zri, imag);
-        loadValue(&mag, getValue(&zrsquare) + getValue(&zisquare));
-        //fpadd3(&mag, &zrsquare, &zisquare);
-        if(fpCompareMag(&mag, &four) != -1)
+        fpsub3(&zr, &zrsquare, &zisquare);
+        fpadd2(&zr, real);
+        fpadd3(&zi, &zri, imag);
+        fpadd3(&mag, &zrsquare, &zisquare);
+        if(mag.value.val[0] >= four.value.val[0])
             break;
     }
     return iter == maxiter ? -1 : iter;
@@ -122,6 +116,9 @@ int getConvRateLD(long double real, long double imag)
     int iter = 0;
     long double zr = 0;
     long double zi = 0;
+    MAKE_STACK_FP(asdf);
+    MAKE_STACK_FP(four);
+    loadValue(&four, 4);
     for(; iter < maxiter; iter++)
     {
         //printf("Doing iter %i\n", iter);
@@ -137,9 +134,7 @@ int getConvRateLD(long double real, long double imag)
         zi = zri + imag;
         //compare mag to 4.0
         //Use fact that 4.0 is the smallest Float value with exponent 2, regardless of precision
-        int expo;
-        frexpl(mag, &expo);
-        if((long long) expo >= 3)
+        if(mag >= 4)
             break;
     }
     return iter == maxiter ? -1 : iter;
@@ -372,8 +367,9 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    FP f1 = FPCtorValue(1, -1.3);
-    FP f2 = FPCtorValue(1, 0.36);
+    /*
+    FP f1 = FPCtorValue(1, 0.04);
+    FP f2 = FPCtorValue(1, -0.36);
     FP f3 = FPCtor(1);
     puts("Testing 3 arg versions...");
     fpmul3(&f3, &f1, &f2);
@@ -393,6 +389,7 @@ int main(int argc, const char** argv)
     fpsub2(&f1, &f3);
     printf("%Lf = %.10Lf\n", getValue(&f3), getValue(&f1));
     return 0;
+    */
 
     //Process cli arguments first
     //Set all the arguments to default first
