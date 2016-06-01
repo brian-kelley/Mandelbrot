@@ -1,0 +1,8 @@
+***Reuse the 25% of pixels that diverged (!= -1) from the last frame (should be a simple copy of each pixel + its iteration count)
+-Clear the iterbuf to all 0 before doing that copy so that worker func will know
+which pixels need to be computed 
+***Create a coarse buffer (100x100?) to store some iter counts for the current frame
+-iterate each of those pixels up to a maximum of a fixed number of levels greater than their least neighbors (see reduceIters()) (not too small of a step (try 25), because so few pixels)
+-Use the coarse buffer to establish an approximate local iteration count (add a small constant to the coarse itercount), hopefully significantly smaller than the actual iteration count, which will save time for deep pixels
+-actual iter cap can be higher for the same cpu time, providing more well-defined converged/diverged boundary
+-for every two adjacent pixels in the coarse buffer with same # iters, immediately apply that # to all pixels that fall inside the pair (only worry about boundaries/transitions)
