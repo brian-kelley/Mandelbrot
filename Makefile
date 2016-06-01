@@ -1,7 +1,7 @@
 CFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math
 DEBUGFLAGS=-std=c99 -g
 FASTCFLAGS=-std=c99 -O0
-SOURCES=mandelbrot.c bigint.c fixedpoint.c lodepng.c
+SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c lodepng.c 
 
 all:
 	nasm -f macho64 routines.asm -o build/routines.o 

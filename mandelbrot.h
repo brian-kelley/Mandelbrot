@@ -1,4 +1,3 @@
-#include "stdint.h"
 #include "stdio.h"
 #include "stdlib.h"
 #include "math.h"
@@ -6,8 +5,7 @@
 #include "pthread.h"
 #include "lodepng.h"
 #include "fixedpoint.h"
-
-typedef uint32_t Uint32;
+#include "image.h"
 
 #define deepestExpo -300
 
@@ -29,3 +27,4 @@ void* workerFunc(void*);         //pthread worker thread function
 int getConvRate(FP* real, FP* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateLD(long double real, long double imag); //actually iterate z = z^2 + c, return iteration count
 int getPrec(int zoomExpo);  //get the precision level required (pass raw biased value)
+

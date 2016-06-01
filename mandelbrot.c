@@ -65,7 +65,7 @@ Uint32 getColor(int num)
     if(num == -1)
         return 0xFF000000;                  //in the mandelbrot set = opaque black
     //make a steeper gradient for the first few iterations (better image 0)
-    int steepCutoff = 50;
+    int steepCutoff = 0;
     if(num <= steepCutoff)
         return colortable[(num * 3) % 360];
     return colortable[((num - steepCutoff) + 3 * steepCutoff) % 360];
@@ -170,9 +170,6 @@ void* workerFunc(void* unused)
         for(int ypix = 0; ypix < winh; ypix++)
         {
             int convRate = getConvRate(&x, &yiter);
-            //int convRate = getConvRateLD(getValue(&x), getValue(&yiter));
-            if(pixbuf)
-                pixbuf[ypix * winw + xpix] = getColor(convRate);
             iterbuf[ypix * winw + xpix] = convRate;
             fpadd2(&yiter, &pstrideLocal);
         }
@@ -201,11 +198,18 @@ void drawBuf()
         pthread_join(threads[i], NULL);
     pthread_mutex_destroy(&workColMutex);
     free(threads);
+    if(pixbuf)  //don't want to do image manipulation during getInterestingLocation
+    {
+        reduceIters(iterbuf, winw, winh);
+        for(int i = 0; i < winw * winh; i++)
+            pixbuf[i] = getColor(iterbuf[i]);
+        //blockFilter(0.1, pixbuf, winw, winh);
+    }
 }
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 40 * zoomExpo;
+    const int normalIncrease = 50 * zoomExpo;
     const int boost = 50;
     int numPixels = winw * winh;
     int numColored = 0;
@@ -260,13 +264,19 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
         //drawBuf() only depends on pixel stride, which is already set 
         drawBuf();
+        puts("**********The buffer:**********");
+        for(int i = 0; i < gpx * gpx; i++)
+        {
+            printf("%5i ", iterbuf[i]);
+            if(i % gpx == gpx - 1)
+                puts("");
+        }
+        puts("*******************************");
         int bestPX;
         int bestPY;
         int bestIters = 0;
-        int numBest = 0;
         u64 itersum = 0;
-        //Find the maximum non-converging iteration count,
-        //and then randomly pick a point with that iter count to be target
+        //get point with maximum iteration count (that didn't converge)
         for(int i = 0; i < gpx; i++)
         {
             for(int j = 0; j < gpx; j++)
@@ -275,24 +285,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
                 if(iterbuf[i + j * gpx] > bestIters)
                 {
                     bestIters = iterbuf[i + j * gpx];
-                    numBest = 1;
-                }
-                else if(iterbuf[i + j * gpx] == bestIters)
-                    numBest++;
-            }
-        }
-        int targetChoice = rand() % numBest;
-        for(int i = 0; i < gpx; i++)
-        {
-            for(int j = 0; j < gpx; j++)
-            {
-                if(iterbuf[i + j * gpx] == bestIters)
-                {
-                    if(--targetChoice == 0)
-                    {
-                        bestPX = i;
-                        bestPY = j;
-                    }
+                    bestPX = i;
+                    bestPY = j;
                 }
             }
         }
@@ -300,7 +294,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         recomputeMaxIter(zoomExpo);
         if(bestIters == 0)
         {
-            puts("getInterestingLocation() got stuck on window of converging points!");
+            puts("getInterestingLocation() frame contains all converging points!");
             break;
         }
         bool allSame = true;
@@ -322,7 +316,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         int ymove = bestPY - gpx / 2;
         if(xmove < 0)
         {
-            for(int i = 0; i < -xmove; i++)
+            for(int i = xmove; i < 0; i++)
                 fpsub2(&targetX, &pstride);
         }
         else if(xmove > 0)
@@ -332,16 +326,14 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         }
         if(ymove < 0)
         {
-            for(int i = 0; i < -ymove; i++)
+            for(int i = ymove; i < 0; i++)
                 fpsub2(&targetY, &pstride);
         }
-        else if(xmove > 0)
+        else if(ymove > 0)
         {
             for(int i = 0; i < ymove; i++)
                 fpadd2(&targetY, &pstride);
         }
-        //zoom in according to the PoT zoom factor defined above
-        fpshr(pstride, zoomExpo);
         //set screen position to the best pixel
         if(prec < getPrec(getApproxExpo(&pstride)))
         {
@@ -351,6 +343,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             prec++;
             printf("*** Increasing precision to level %i ***\n", prec);
         }
+        //zoom in according to the PoT zoom factor defined above
+        fpshr(pstride, zoomExpo);
     }
     free(iterbuf);
     iterbuf = NULL;
@@ -370,7 +364,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 int getPrec(int expo)
 {
-    return ceil(-expo / 45) + 1;
+    return ceil(-expo / 30) + 1;
 }
 
 int main(int argc, const char** argv)
@@ -428,7 +422,7 @@ int main(int argc, const char** argv)
     winh = imageHeight;
     initPositionVars();
     printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-    maxiter = 100;
+    maxiter = 2000;
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
