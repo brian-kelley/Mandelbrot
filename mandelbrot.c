@@ -177,8 +177,12 @@ void* workerFunc(void* unused)
     return NULL;
 }
 
-void drawBuf()
+void drawBuf(bool firstImage)
 {
+    //if drawing images and this is not the first image, use the 25% heuristic
+    if(pixbuf && !firstImage)
+    {
+    }
     workCol = 0;
     if(pthread_mutex_init(&workColMutex, NULL))
     {
@@ -263,7 +267,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     {
         printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
         //drawBuf() only depends on pixel stride, which is already set 
-        drawBuf();
+        drawBuf(false);
         puts("**********The buffer:**********");
         for(int i = 0; i < gpx * gpx; i++)
         {
@@ -422,7 +426,7 @@ int main(int argc, const char** argv)
     winh = imageHeight;
     initPositionVars();
     printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-    maxiter = 2000;
+    maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     pixbuf = (Uint32*) malloc(sizeof(Uint32) * winw * winh);
@@ -432,7 +436,7 @@ int main(int argc, const char** argv)
     while(getApproxExpo(&pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
-        drawBuf();
+        drawBuf(filecount == 0);
         writeImage();
         zoomToTarget();
         recomputeMaxIter(1);
