@@ -169,42 +169,47 @@ void* workerFunc(void* unused)
             fpsub2(&yiter, &pstrideLocal);
         for(int ypix = 0; ypix < winh; ypix++)
         {
-            int convRate = getConvRate(&x, &yiter);
-            iterbuf[ypix * winw + xpix] = convRate;
+            if(filecount % 8 == 0 || iterbuf[xpix + ypix * winw] == 0)
+            {
+                int convRate = getConvRate(&x, &yiter);
+                iterbuf[xpix + ypix * winw] = convRate;
+            }
             fpadd2(&yiter, &pstrideLocal);
         }
     }
     return NULL;
 }
 
-void drawBuf(bool firstImage)
+void drawBuf()
 {
     //if drawing images and this is not the first image, use the 25% heuristic
-    if(pixbuf && !firstImage)
+    if(pixbuf && filecount != 0)
     {
         //iterate in rows from top to middle then from bottom to middle
         //if an itercount+color can be borrowed from the last frame, copy it
         //otherwise, set to 0
-        for(int i = 0; i < winw; i++)
+        #define recyclePix \
+        { \
+            int oldx = winw / 4 + i / 2; \
+            int oldy = winh / 4 + j / 2; \
+            if(i % 2 == 0 && j % 2 == 0) \
+                iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw]; \
+            else \
+                iterbuf[i + j * winw] = 0; \
+        }
+        for(int i = 0; i < winw / 2; i++)
         {
             for(int j = 0; j < winh / 2; j++)
-            {
-                int oldx = winw / 4 + i / 2;
-                int oldy = winh / 4 + j / 2;
-                if(i % 2 == 0 && j % 2 == 0) // && iterbuf[oldx + oldy * winw] != -1)
-                    iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
-                else
-                    iterbuf[i + j * winw] = 0;
-            }
+                recyclePix;
             for(int j = winh - 1; j >= winh / 2; j--)
-            {
-                int oldx = winw / 4 + i / 2;
-                int oldy = winh / 4 + j / 2;
-                if(i % 2 == 0 && j % 2 == 0) // && iterbuf[oldx + oldy * winw] != -1)
-                    iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
-                else
-                    iterbuf[i + j * winw] = 0;
-            }
+                recyclePix;
+        }
+        for(int i = winw - 1; i >= winw / 2; i--)
+        {
+            for(int j = 0; j < winh / 2; j++)
+                recyclePix;
+            for(int j = winh - 1; j >= winh / 2; j--)
+                recyclePix;
         }
     }
     workCol = 0;
@@ -291,7 +296,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     {
         printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
         //drawBuf() only depends on pixel stride, which is already set 
-        drawBuf(false);
+        drawBuf();
         puts("**********The buffer:**********");
         for(int i = 0; i < gpx * gpx; i++)
         {
@@ -460,7 +465,7 @@ int main(int argc, const char** argv)
     while(getApproxExpo(&pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
-        drawBuf(filecount == 0);
+        drawBuf();
         writeImage();
         zoomToTarget();
         recomputeMaxIter(1);
