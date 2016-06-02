@@ -182,6 +182,30 @@ void drawBuf(bool firstImage)
     //if drawing images and this is not the first image, use the 25% heuristic
     if(pixbuf && !firstImage)
     {
+        //iterate in rows from top to middle then from bottom to middle
+        //if an itercount+color can be borrowed from the last frame, copy it
+        //otherwise, set to 0
+        for(int i = 0; i < winw; i++)
+        {
+            for(int j = 0; j < winh / 2; j++)
+            {
+                int oldx = winw / 4 + i / 2;
+                int oldy = winh / 4 + j / 2;
+                if(i % 2 == 0 && j % 2 == 0 && iterbuf[oldx + oldy * winw] != -1)
+                    iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
+                else
+                    iterbuf[i + j * winw] = 0;
+            }
+            for(int j = winh - 1; j >= winh / 2; j--)
+            {
+                int oldx = winw / 4 + i / 2;
+                int oldy = winh / 4 + j / 2;
+                if(i % 2 == 0 && j % 2 == 0 && iterbuf[oldx + oldy * winw] != -1)
+                    iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
+                else
+                    iterbuf[i + j * winw] = 0;
+            }
+        }
     }
     workCol = 0;
     if(pthread_mutex_init(&workColMutex, NULL))
