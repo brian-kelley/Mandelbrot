@@ -191,7 +191,7 @@ void drawBuf(bool firstImage)
             {
                 int oldx = winw / 4 + i / 2;
                 int oldy = winh / 4 + j / 2;
-                if(i % 2 == 0 && j % 2 == 0 && iterbuf[oldx + oldy * winw] != -1)
+                if(i % 2 == 0 && j % 2 == 0) // && iterbuf[oldx + oldy * winw] != -1)
                     iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
                 else
                     iterbuf[i + j * winw] = 0;
@@ -200,7 +200,7 @@ void drawBuf(bool firstImage)
             {
                 int oldx = winw / 4 + i / 2;
                 int oldy = winh / 4 + j / 2;
-                if(i % 2 == 0 && j % 2 == 0 && iterbuf[oldx + oldy * winw] != -1)
+                if(i % 2 == 0 && j % 2 == 0) // && iterbuf[oldx + oldy * winw] != -1)
                     iterbuf[i + j * winw] = iterbuf[oldx + oldy * winw];
                 else
                     iterbuf[i + j * winw] = 0;
