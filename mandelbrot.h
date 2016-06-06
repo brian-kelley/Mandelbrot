@@ -20,6 +20,7 @@ void drawBuf(Buffer* buf, bool doRecycle);    //compute iters/colors for pixels
 void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle);
 
 void launchWorkers(Buffer* buf);
+void launchWorkersCapped(Buffer* buf, Buffer* coarse);
 void recycle(Buffer* buf);
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
@@ -33,6 +34,8 @@ void loadResumeState(const char* fname);
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void applyCoarseIters(int* iters);
 void* workerFunc(void* buffer);         //pthread worker thread function
+void* workerFuncCapped(void* buffers);         //pthread worker thread function
 int getConvRate(FP* real, FP* imag);  //actually iterate z = z^2 + c, return iteration count
+int getConvRateCapped(FP* real, FP* imag, int localMaxIter);  //actually iterate z = z^2 + c, return iteration count
 int getPrec(int zoomExpo);  //get the precision level required (pass raw biased value)
 

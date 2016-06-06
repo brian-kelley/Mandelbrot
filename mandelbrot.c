@@ -88,6 +88,37 @@ int getConvRate(FP* real, FP* imag)
     return iter == maxiter ? -1 : iter;
 }
 
+int getConvRateCapped(FP* real, FP* imag, int localMaxIter)
+{
+    //real, imag make up "c" in z = z^2 + c
+    MAKE_STACK_FP(four);
+    loadValue(&four, 4);
+    MAKE_STACK_FP(zr);
+    loadValue(&zr, 0);
+    MAKE_STACK_FP(zi);
+    loadValue(&zi, 0);
+    MAKE_STACK_FP(zrsquare);
+    MAKE_STACK_FP(zisquare);
+    MAKE_STACK_FP(zri);
+    MAKE_STACK_FP(mag);
+    int iter = 0;
+    for(; iter < localMaxIter; iter++)
+    {
+        fpmul3(&zrsquare, &zr, &zr);
+        fpmul3(&zisquare, &zi, &zi);
+        fpmul3(&zri, &zr, &zi);
+        //want 2 * zr * zi
+        fpshlOne(zri);
+        fpsub3(&zr, &zrsquare, &zisquare);
+        fpadd2(&zr, real);
+        fpadd3(&zi, &zri, imag);
+        fpadd3(&mag, &zrsquare, &zisquare);
+        if(mag.value.val[0] >= four.value.val[0])
+            break;
+    }
+    return iter == localMaxIter ? -1 : iter;
+}
+
 void* workerFunc(void* buffer)
 {
     Buffer* buf = (Buffer*) buffer;
@@ -136,6 +167,62 @@ void* workerFunc(void* buffer)
     return NULL;
 }
 
+void* workerFuncCapped(void* buffers)
+{
+    Buffer** bufs = (Buffer**) buffers;
+    Buffer* buf = bufs[0];
+    Buffer* coarse = bufs[1];
+    MAKE_STACK_FP(pixFloat);
+    MAKE_STACK_FP(x);
+    MAKE_STACK_FP(yiter);
+    MAKE_STACK_FP(pstrideLocal);
+    fpcopy(&pstrideLocal, &buf->pstride);
+    while(true)
+    {
+        //Fetch and increment the current work column
+        int xpix;
+        pthread_mutex_lock(&workColMutex);
+        xpix = workCol++;
+        pthread_mutex_unlock(&workColMutex);
+        //if all work has been completed, quit and wait to be joined with main thread
+        if(xpix >= buf->w)
+            return NULL;
+        //Otherwise, compute the pixels for column xpix
+        int offset = xpix - buf->w / 2;
+        fpcopy(&x, &targetX);
+        if(offset < 0)
+        {
+            for(int i = offset; i < 0; i++)
+                fpsub2(&x, &pstrideLocal);
+        }
+        else if(offset > 0)
+        {
+            for(int i = 0; i < offset; i++)
+                fpadd2(&x, &pstrideLocal);
+        }
+        int coarseX = xpix * ((float) coarse->w / buf->w);
+        int coarseY;
+        //prepare y as the minimum y of the viewport
+        fpcopy(&yiter, &targetY);
+        for(int i = 0; i < buf->h / 2; i++)
+            fpsub2(&yiter, &pstrideLocal);
+        for(int ypix = 0; ypix < buf->h; ypix++)
+        {
+            if(filecount % 8 == 0 || buf->iters[xpix + ypix * buf->w] == 0)
+            {
+                coarseY = ypix * ((float) coarse->h / buf->h);
+                int convRate = getConvRateCapped(&x, &yiter, 
+                        coarse->iters[coarseX + coarseY * coarse->w] + 50);
+                buf->iters[xpix + ypix * buf->w] = convRate;
+            }
+            fpadd2(&yiter, &pstrideLocal);
+        }
+    }
+    return NULL;
+}
+
+
+
 void drawBuf(Buffer* buf, bool doRecycle)
 {
     if(doRecycle)
@@ -177,7 +264,6 @@ void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle)
                 ylo = max(ylo, 0);
                 xhi = min(xhi, buf->w - 1);
                 yhi = min(yhi, buf->h - 1);
-                //printf("Not recomputing from (%i, %i) to (%i, %i)\n", xlo, ylo, xhi, yhi);
                 for(int ii = xlo; ii <= xhi; ii++)
                 {
                     for(int jj = ylo; jj <= yhi; jj++)
@@ -195,7 +281,7 @@ void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle)
     if(verbose)
         printf("Saved %i (%.1f%%) pixels.\n", numSaved, 100.0 * numSaved / (buf->w * buf->h));
     launchWorkers(buf);
-    reduceIters(buf->iters, 5, buf->w, buf->h);
+    reduceIters(buf->iters, 4, buf->w, buf->h);
     for(int i = 0; i < buf->w * buf->h; i++)
         buf->colors[i] = getColor(buf->iters[i]);
 }
@@ -212,6 +298,30 @@ void launchWorkers(Buffer* buf)
     for(int i = 0; i < numThreads; i++)
     {
         if(pthread_create(&threads[i], NULL, workerFunc, buf))
+        {
+            puts("Fatal error: Failed to create thread.");
+            exit(EXIT_FAILURE);
+        }
+    }
+    for(int i = 0; i < numThreads; i++)
+        pthread_join(threads[i], NULL);
+    pthread_mutex_destroy(&workColMutex);
+    free(threads);
+}
+
+void launchWorkersCapped(Buffer* buf, Buffer* coarse)
+{
+    workCol = 0;
+    if(pthread_mutex_init(&workColMutex, NULL))
+    {
+        puts("Failed to create mutex.");
+        exit(EXIT_FAILURE);
+    }
+    Buffer* buffers[2] = {buf, coarse};
+    pthread_t* threads = (pthread_t*) malloc(sizeof(pthread_t) * numThreads);
+    for(int i = 0; i < numThreads; i++)
+    {
+        if(pthread_create(&threads[i], NULL, workerFuncCapped, buffers))
         {
             puts("Fatal error: Failed to create thread.");
             exit(EXIT_FAILURE);
