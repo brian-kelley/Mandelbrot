@@ -19,7 +19,11 @@ void writeImage(Buffer* buf)
     for(int i = 0; i < buf->w * buf->h; i++)
     {
         Uint32 temp = buf->colors[i]; 
-        buf->colors[i] = 0xFF000000 | (temp & 0xFF << 8) | (temp & 0xFF00 >> 8) | (temp & 0xFF0000 >> 0);
+        //rgba -> abgr
+        //BGRA
+        //b highest
+        //r lowest
+        buf->colors[i] = ((temp & 0xFF000000) >> 24) | (temp & 0xFF0000) | ((temp & 0xFF00) << 16) | ((temp & 0xFF) << 24);
     }
     lodepng_encode32_file(name, (unsigned char*) buf->colors, buf->w, buf->h);
 }
@@ -42,14 +46,14 @@ void initColorTable()
             g = 255 - slope * abs((t - 120) % 360);
         if(t >= 120)
             b = 255 - slope * abs((t - 240) % 360);
-        colortable[i] = 0xFF000000 | r << 0 | g << 8 | b << 16;
+        colortable[i] = (unsigned) r << 24 | (unsigned) g << 16 | (unsigned) b << 8 | 0xFF;
     }
 }
 
 Uint32 getColor(int num)
 {
     if(num == -1)
-        return 0xFF000000;                  //in the mandelbrot set = opaque black
+        return 0xFF;                  //in the mandelbrot set = opaque black
     //make a steeper gradient for the first few iterations (better image 0)
     int steepCutoff = 0;
     if(num <= steepCutoff)
@@ -212,7 +216,7 @@ void* workerFuncCapped(void* buffers)
             {
                 coarseY = ypix * ((float) coarse->h / buf->h);
                 int convRate = getConvRateCapped(&x, &yiter, 
-                        coarse->iters[coarseX + coarseY * coarse->w] + 50);
+                        coarse->iters[coarseX + coarseY * coarse->w] + 100);
                 buf->iters[xpix + ypix * buf->w] = convRate;
             }
             fpadd2(&yiter, &pstrideLocal);
@@ -238,7 +242,7 @@ void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle)
         recycle(buf);
     else
         memset(buf->iters, 0, buf->w * buf->h * sizeof(int));
-    drawBuf(coarse, doRecycle);
+    drawBuf(coarse, false); //never try to recycle coarse, because artifacts are amplified
     float xscl = (float) buf->w / coarse->w;
     float yscl = (float) buf->h / coarse->h;
     reduceIters(coarse->iters, 5 * xscl, coarse->w, coarse->h);
@@ -281,9 +285,10 @@ void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle)
     if(verbose)
         printf("Saved %i (%.1f%%) pixels.\n", numSaved, 100.0 * numSaved / (buf->w * buf->h));
     launchWorkers(buf);
-    reduceIters(buf->iters, 4, buf->w, buf->h);
+    reduceIters(buf->iters, 5, buf->w, buf->h);
     for(int i = 0; i < buf->w * buf->h; i++)
         buf->colors[i] = getColor(buf->iters[i]);
+    blockFilter(0.1, buf->colors, buf->w, buf->h);
 }
 
 void launchWorkers(Buffer* buf)
@@ -583,7 +588,7 @@ int main(int argc, const char** argv)
     {
         time_t start = time(NULL);
         //create coarse image with full iteration count
-        //fastDrawBuf(&image, &coarse, filecount % 8 != 0);
+        //fastDrawBuf(&image, &coarse, filecount % 3 != 0);
         fastDrawBuf(&image, &coarse, false);
         writeImage(&image);
         fpshrOne(image.pstride);

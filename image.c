@@ -69,7 +69,7 @@ void blockFilter(float constant, Uint32* buf, int w, int h)
             rsum = max(rsum, 0);
             gsum = max(gsum, 0);
             bsum = max(bsum, 0);
-            blurred[i + j * w] = 0xFF000000 | ((Uint32) rsum << 0) | ((Uint32) gsum << 8) | ((Uint32) bsum << 16);
+            blurred[i + j * w] = (unsigned) rsum << 24 | (unsigned) gsum << 16 | (unsigned) bsum << 8 | 0xFF;
         }
     }
     //copy blurred pixels back to original buffer
