@@ -136,41 +136,72 @@ void* workerFunc(void* buffer)
     return NULL;
 }
 
-void drawBuf(Buffer* buf, bool recycle)
+void drawBuf(Buffer* buf, bool doRecycle)
 {
-    if(recycle)
-    {
-        //iterate in rows from top to middle then from bottom to middle
-        //if an itercount+color can be borrowed from the last frame, copy it
-        //otherwise, set to 0
-        #define recyclePix \
-        { \
-            int oldx = buf->w / 4 + i / 2; \
-            int oldy = buf->h / 4 + j / 2; \
-            if(i % 2 == 0 && j % 2 == 0) \
-                buf->iters[i + j * buf->w] = buf->iters[oldx + oldy * buf->w]; \
-            else \
-                buf->iters[i + j * buf->w] = 0; \
-        }
-        for(int i = 0; i < buf->w / 2; i++)
-        {
-            for(int j = 0; j < buf->h / 2; j++)
-                recyclePix;
-            for(int j = buf->h - 1; j >= buf->h / 2; j--)
-                recyclePix;
-        }
-        for(int i = buf->w - 1; i >= buf->w / 2; i--)
-        {
-            for(int j = 0; j < buf->h / 2; j++)
-                recyclePix;
-            for(int j = buf->h - 1; j >= buf->h / 2; j--)
-                recyclePix;
-        }
-    }
+    if(doRecycle)
+        recycle(buf);
     else
-    {
         memset(buf->iters, 0, buf->w * buf->h * sizeof(int));
+    launchWorkers(buf);
+}
+
+void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle)
+{
+    if(doRecycle)
+        recycle(buf);
+    else
+        memset(buf->iters, 0, buf->w * buf->h * sizeof(int));
+    drawBuf(coarse, doRecycle);
+    float xscl = (float) buf->w / coarse->w;
+    float yscl = (float) buf->h / coarse->h;
+    reduceIters(coarse->iters, 5 * xscl, coarse->w, coarse->h);
+    //copy pixels from solid regions of coarse
+#define GET_COARSE(x, y) (coarse->iters[x + coarse->w * y])
+    int numSaved = 0;
+    for(int i = 0; i < coarse->w - 1; i++)
+    {
+        for(int j = 0; j < coarse->h - 1; j++)
+        {
+            //if the 2x2 region of pixels in coarse is all the same,
+            //fill all pixels in corresponding area of fine image 
+            int fillValue = GET_COARSE(i, j);
+            if(fillValue == GET_COARSE(i + 1, j) &&
+               fillValue == GET_COARSE(i + 1, j + 1) &&
+               fillValue == GET_COARSE(i, j + 1))
+            {
+                int xlo = ceil(buf->w / 2 + xscl * (i - coarse->w / 2));
+                int xhi = floor(buf->w / 2 + xscl * (i + 1 - coarse->w / 2));
+                int ylo = ceil(buf->h / 2 + yscl * (j - coarse->h / 2));
+                int yhi = floor(buf->h / 2 + yscl * (j + 1 - coarse->h / 2));
+                xlo = max(xlo, 0);
+                ylo = max(ylo, 0);
+                xhi = min(xhi, buf->w - 1);
+                yhi = min(yhi, buf->h - 1);
+                //printf("Not recomputing from (%i, %i) to (%i, %i)\n", xlo, ylo, xhi, yhi);
+                for(int ii = xlo; ii <= xhi; ii++)
+                {
+                    for(int jj = ylo; jj <= yhi; jj++)
+                    {
+                        if(buf->iters[ii + jj * buf->w] == 0)
+                        {
+                            buf->iters[ii + jj * buf->w] = fillValue;
+                            numSaved++;
+                        }
+                    }
+                }
+            }
+        }
     }
+    if(verbose)
+        printf("Saved %i (%.1f%%) pixels.\n", numSaved, 100.0 * numSaved / (buf->w * buf->h));
+    launchWorkers(buf);
+    reduceIters(buf->iters, 5, buf->w, buf->h);
+    for(int i = 0; i < buf->w * buf->h; i++)
+        buf->colors[i] = getColor(buf->iters[i]);
+}
+
+void launchWorkers(Buffer* buf)
+{
     workCol = 0;
     if(pthread_mutex_init(&workColMutex, NULL))
     {
@@ -190,11 +221,35 @@ void drawBuf(Buffer* buf, bool recycle)
         pthread_join(threads[i], NULL);
     pthread_mutex_destroy(&workColMutex);
     free(threads);
-    if(buf->colors)  //don't want to do image manipulation during getInterestingLocation
+}
+
+void recycle(Buffer* buf)
+{
+    //iterate in rows from top to middle then from bottom to middle
+    //if an itercount+color can be borrowed from the last frame, copy it
+    //otherwise, set to 0
+    #define recyclePix \
+    { \
+        int oldx = buf->w / 4 + i / 2; \
+        int oldy = buf->h / 4 + j / 2; \
+        if(i % 2 == 0 && j % 2 == 0) \
+            buf->iters[i + j * buf->w] = buf->iters[oldx + oldy * buf->w]; \
+        else \
+            buf->iters[i + j * buf->w] = 0; \
+    }
+    for(int i = 0; i < buf->w / 2; i++)
     {
-        //reduceIters(buf->iters, buf->w, buf->h);
-        for(int i = 0; i < buf->w * buf->h; i++)
-            buf->colors[i] = getColor(buf->iters[i]);
+        for(int j = 0; j < buf->h / 2; j++)
+            recyclePix;
+        for(int j = buf->h - 1; j >= buf->h / 2; j--)
+            recyclePix;
+    }
+    for(int i = buf->w - 1; i >= buf->w / 2; i--)
+    {
+        for(int j = 0; j < buf->h / 2; j++)
+            recyclePix;
+        for(int j = buf->h - 1; j >= buf->h / 2; j--)
+            recyclePix;
     }
 }
 
@@ -227,7 +282,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     buf.pstride = FPCtorValue(prec, initViewport / gpx);
     buf.w = gpx;
     buf.h = gpx;
-    int zoomExpo = 4;               //log_2 of zoom factor 
+    int zoomExpo = 3;               //log_2 of zoom factor 
     FP fbestPX = FPCtor(1);
     FP fbestPY = FPCtor(1);
     maxiter = 300;
@@ -407,6 +462,7 @@ int main(int argc, const char** argv)
     coarse.h = coarse.w * imageHeight / imageWidth;
     coarse.iters = (int*) malloc(coarse.w * coarse.h * sizeof(int));
     coarse.colors = NULL;
+    coarse.pstride = FPCtorValue(prec, 4.0 / coarse.w);
     printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
     maxiter = 500;
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
@@ -416,16 +472,18 @@ int main(int argc, const char** argv)
     while(getApproxExpo(&image.pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
-        puts("about to draw buf");
-        drawBuf(&image, filecount % 7 != 0);
-        puts("done");
+        //create coarse image with full iteration count
+        //fastDrawBuf(&image, &coarse, filecount % 8 != 0);
+        fastDrawBuf(&image, &coarse, false);
         writeImage(&image);
         fpshrOne(image.pstride);
+        fpshrOne(coarse.pstride);
         recomputeMaxIter(1);
         int timeDiff = time(NULL) - start;
         if(getPrec(getApproxExpo(&image.pstride)) > prec)
         {
             INCR_PREC(image.pstride);
+            INCR_PREC(coarse.pstride);
             prec++;
             if(verbose)
                 printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 63 * prec);
@@ -438,7 +496,7 @@ int main(int argc, const char** argv)
             printf("px/sec/thread: %i\n", image.w * image.h / max(1, timeDiff) / numThreads);
         }
         else
-            puts("");
+            puts(".");
     }
     free(image.iters);
     free(image.colors);

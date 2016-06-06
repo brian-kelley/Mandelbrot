@@ -1,3 +1,3 @@
 #!/bin/bash
 
-lldb build/Mandelbrot -- --nice -n 10 build/Mandelbrot --size 300x300 --targetcache target.bin -n 4 --verbose
+lldb build/Mandelbrot -- build/Mandelbrot --size 1920x1080 --targetcache target.bin --usetargetcache -n 3 --verbose

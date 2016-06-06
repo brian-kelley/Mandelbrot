@@ -17,6 +17,6 @@ typedef uint32_t Uint32;
 
 //constant = how much color is borrowed from each neighbor (i.e. 0.1 means multiply neighbors by 0.1, and old color by 0.6)
 void blockFilter(float constant, Uint32* buf, int w, int h);   
-void reduceIters(int* iterbuf, int w, int h);
+void reduceIters(int* iterbuf, int diffCap, int w, int h);
 
 #endif

@@ -77,9 +77,8 @@ void blockFilter(float constant, Uint32* buf, int w, int h)
     free(blurred);
 }
 
-void reduceIters(int* iterbuf, int w, int h)
+void reduceIters(int* iterbuf, int diffCap, int w, int h)
 {
-    int diffCap = 10;        //maximum difference between an itercount and the min of itercounts of its neighbors
     bool changed;
     do
     {

@@ -16,13 +16,15 @@ typedef struct
     int h;
 } Buffer;
 
-/* Initialization functions */
-void initColorTable();      //compute the RGBA values and store in a static table
-void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
+void drawBuf(Buffer* buf, bool doRecycle);    //compute iters/colors for pixels
+void fastDrawBuf(Buffer* buf, Buffer* coarse, bool doRecycle);
 
-/* High level main loop functions */
-void drawBuf(Buffer* buf, bool recycle);      //compute iteration count & color for every pixel in viewport
-void writeImage(Buffer* buf);          //use lodePNG to write out the current conv-rate buffer
+void launchWorkers(Buffer* buf);
+void recycle(Buffer* buf);
+
+void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
+void initColorTable();    //compute the RGBA values and store in a static table
+void writeImage(Buffer* buf);       //use lodePNG to write out the current conv-rate buffer
 void recomputeMaxIter(int zoomExpo);    //update iteration cap between zooms
 void saveResumeState(const char* fname);
 void loadResumeState(const char* fname);

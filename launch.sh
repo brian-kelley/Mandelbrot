@@ -1,2 +1,2 @@
 #!/bin/bash
-nice -n 10 build/Mandelbrot --size 300x300 --targetcache new.bin -n 4 --verbose --depth -40
+nice -n 0 build/Mandelbrot --size 1280x800 --targetcache target.bin --usetargetcache -n 3 --verbose --depth -400
