@@ -1,13 +1,13 @@
 #include "image.h"
 
-#define GET_R(px) (((px) & 0xFF0000) >> 16)
-#define GET_G(px) (((px) & 0xFF00) >> 8)
-#define GET_B(px) ((px) & 0xFF)
+#define GET_R(px) (((px) & 0xFF000000) >> 24)
+#define GET_G(px) (((px) & 0xFF0000) >> 16)
+#define GET_B(px) (((px) & 0xFF00) >> 8)
 
 void blockFilter(float constant, Uint32* buf, int w, int h)
 {
     Uint32* blurred = (Uint32*) malloc(w * h * sizeof(Uint32));
-    const Uint32 BLACK = 0xFF000000;        //opaque black
+    const Uint32 BLACK = 0xFF;        //opaque black
     //write the blurred pixels into the new buffer
     bool fadeIntoBlack = false;
     for(int i = 0; i < w; i++)
@@ -61,7 +61,7 @@ void blockFilter(float constant, Uint32* buf, int w, int h)
             rsum += (1.0f - totalWeight) * GET_R(buf[i + w * j]);
             gsum += (1.0f - totalWeight) * GET_G(buf[i + w * j]);
             bsum += (1.0f - totalWeight) * GET_B(buf[i + w * j]);
-            //now [rgb]sum have the final colok
+            //now [rgb]sum have the final color
             //clamp to [0, 0x100)
             rsum = min(rsum, 0xFF);
             gsum = min(gsum, 0xFF);
@@ -69,7 +69,7 @@ void blockFilter(float constant, Uint32* buf, int w, int h)
             rsum = max(rsum, 0);
             gsum = max(gsum, 0);
             bsum = max(bsum, 0);
-            blurred[i + j * w] = (unsigned) rsum << 24 | (unsigned) gsum << 16 | (unsigned) bsum << 8 | 0xFF;
+            blurred[i + j * w] = ((unsigned) rsum << 24) | ((unsigned) gsum << 16) | ((unsigned) bsum << 8) | 0xFF;
         }
     }
     //copy blurred pixels back to original buffer

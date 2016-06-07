@@ -19,11 +19,8 @@ void writeImage(Buffer* buf)
     for(int i = 0; i < buf->w * buf->h; i++)
     {
         Uint32 temp = buf->colors[i]; 
-        //rgba -> abgr
-        //BGRA
-        //b highest
-        //r lowest
-        buf->colors[i] = ((temp & 0xFF000000) >> 24) | (temp & 0xFF0000) | ((temp & 0xFF00) << 16) | ((temp & 0xFF) << 24);
+        //convert rgba to big endian
+        buf->colors[i] = ((temp & 0xFF000000) >> 24) | ((temp & 0xFF0000) >> 8) | ((temp & 0xFF00) << 8) | ((temp & 0xFF) << 24);
     }
     lodepng_encode32_file(name, (unsigned char*) buf->colors, buf->w, buf->h);
 }
@@ -34,9 +31,9 @@ void initColorTable()
     for(int i = 0; i < 360; i++)
     {
         int t = (i * 2 + 240) % 360;
-        int r = 0;
-        int g = 0;
-        int b = 0;
+        unsigned r = 0;
+        unsigned g = 0;
+        unsigned b = 0;
         float slope = 255.0 / 120;
         if(t <= 120)
             r = 255 - slope * t;
@@ -46,7 +43,7 @@ void initColorTable()
             g = 255 - slope * abs((t - 120) % 360);
         if(t >= 120)
             b = 255 - slope * abs((t - 240) % 360);
-        colortable[i] = (unsigned) r << 24 | (unsigned) g << 16 | (unsigned) b << 8 | 0xFF;
+        colortable[i] = (r << 24) | (g << 16) | (b << 8) | 0xFF;
     }
 }
 
