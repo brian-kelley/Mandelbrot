@@ -51,17 +51,16 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
     for(int i = 0; i < 2 * words; i++)
         dst->val[i] = 0;
     //first, compute the low half of the full result
-    for(int i = words - 1; i >= 0; i--)          //i = index of word of *this
+    u64 hi, lo;
+    unsigned __int128 prod;
+    for(int i = words - 1; i >= 0; i--)
     {
-        for(int j = words - 1; j >= 0; j--)      //j = index of word of rhs
+        for(int j = words - 1; j >= 0; j--)
         {
-            //do the long multiplication
-            u64 hi, lo;
-            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
+            prod = (unsigned __int128) lhs->val[i] * (unsigned __int128) rhs->val[j];
             int destWord = i + j + 1;
-            hi <<= 1;
-            hi |= ((lo & (1ULL << 63)) >> 63);
-            lo &= digitMask;
+            lo = prod & 0x7FFFFFFFFFFFFFFF;
+            hi = prod >> 63;
             biAddWord(dst, lo, destWord);
             biAddWord(dst, hi, destWord - 1);
         }

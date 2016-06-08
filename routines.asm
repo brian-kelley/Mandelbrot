@@ -1,5 +1,6 @@
 ; void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
 
+global _bimul
 global _longmul
 
 section .text
@@ -17,3 +18,4 @@ mul qword rsi
 mov [r8], rdx
 mov [rcx], rax
 ret
+
