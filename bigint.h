@@ -30,6 +30,7 @@ BigInt BigIntCtor(int size);
 BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
+void bimulOld(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
@@ -48,5 +49,7 @@ u64 biNthBit(BigInt* op, int n);
 bool biAddWord(BigInt* bi, u64 word, int position);
 //routine implemented in asm
 extern void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
+
+void profiler();
 
 #endif

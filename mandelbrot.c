@@ -510,6 +510,9 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
+    profiler();
+    return 0;
+    
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;

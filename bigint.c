@@ -67,6 +67,33 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
+void bimulOld(BigInt* dst, BigInt* lhs, BigInt* rhs)
+{
+    //zero out dst
+    int words = lhs->size;
+    for(int i = 0; i < 2 * words; i++)
+        dst->val[i] = 0;
+    //first, compute the low half of the full result
+    u64 hi, lo;
+    for(int i = words - 1; i >= 0; i--)
+    {
+        for(int j = words - 1; j >= 0; j--)
+        {
+            int destWord = i + j + 1;
+            u64 hi, lo;
+            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
+            hi <<= 1;
+            if(lo & carryMask)
+            {
+                lo &= digitMask;
+                hi |= 1;
+            }
+            biAddWord(dst, lo, destWord);
+            biAddWord(dst, hi, destWord - 1);
+        }
+    }
+}
+
 u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
@@ -81,16 +108,11 @@ u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 
 void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
-    //copy words of rhs into dst
+    //copy words of lhs into dst
     for(int i = 0; i < dst->size; i++)
-        dst->val[i] = rhs->val[i];
-    BigInt addend;
-    addend.size = rhs->size;
-    addend.val = (u64*) alloca(addend.size * sizeof(u64));
-    for(int i = 0; i < rhs->size; i++)
-        addend.val[i] = rhs->val[i];
-    biTwoComplement(&addend);
-    biadd(dst, lhs, &addend);
+        dst->val[i] = lhs->val[i];
+    for(int i = dst->size - 1; i >= 0; i--)
+        biAddWord(dst, ~rhs->val[i] & digitMask, i);
 }
 
 void bishl(BigInt* op, int bits)
@@ -251,3 +273,34 @@ u64 biNthBit(BigInt* op, int n)
     return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
 }
 
+void profiler()
+{
+    int prec = 5;
+    u64 trials = 100;
+    u64 operations = 300000;
+    BigInt op1 = BigIntCtor(prec);
+    BigInt op2 = BigIntCtor(prec);
+    BigInt dst = BigIntCtor(prec);
+#define profile(func) \
+    { \
+        clock_t start = clock(); \
+        for(u64 i = 0; i < trials; i++) \
+        { \
+            for(int j = 0; j < prec; j++) \
+            { \
+                op1.val[j] = ((u64) rand()) << 32 ^ (u64) rand(); \
+                op2.val[j] = ((u64) rand()) << 32 ^ (u64) rand(); \
+            } \
+            for(u64 j = 0; j < operations; j++) \
+            { \
+                func(&dst, &op1, &op2); \
+            } \
+        } \
+        double perSec = (double) trials * (double) operations / ((double) clock() - start) * CLOCKS_PER_SEC; \
+        printf("Function %s ran %e times per sec.\n", #func, perSec); \
+    }
+    profile(bimul);
+    profile(bimulOld);
+    profile(biadd);
+    profile(bisub);
+}

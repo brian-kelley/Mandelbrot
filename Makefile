@@ -4,7 +4,8 @@ FASTCFLAGS=-std=c99 -O0
 SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c lodepng.c 
 
 all:
-	gcc ${CFLAGS} ${SOURCES} -lc -lpthread -o build/Mandelbrot
+	nasm -f macho64 routines.asm -o routines.o
+	gcc ${CFLAGS} ${SOURCES} routines.o -lc -lpthread -o build/Mandelbrot
 
 linux:
 	gcc ${CFLAGS} ${SOURCES} -lc -lpthread -o build/Mandelbrot
