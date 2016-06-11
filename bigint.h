@@ -6,6 +6,10 @@
 #include "time.h"
 #include "assert.h"
 
+#ifdef __CYGWIN__
+#include "alloca.h"
+#endif
+
 #ifndef BIGINT_H
 #define BIGINT_H
 
