@@ -67,33 +67,6 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
-void bimulOld(BigInt* dst, BigInt* lhs, BigInt* rhs)
-{
-    //zero out dst
-    int words = lhs->size;
-    for(int i = 0; i < 2 * words; i++)
-        dst->val[i] = 0;
-    //first, compute the low half of the full result
-    u64 hi, lo;
-    for(int i = words - 1; i >= 0; i--)
-    {
-        for(int j = words - 1; j >= 0; j--)
-        {
-            int destWord = i + j + 1;
-            u64 hi, lo;
-            longmul(lhs->val[i], rhs->val[j], &hi, &lo);
-            hi <<= 1;
-            if(lo & carryMask)
-            {
-                lo &= digitMask;
-                hi |= 1;
-            }
-            biAddWord(dst, lo, destWord);
-            biAddWord(dst, hi, destWord - 1);
-        }
-    }
-}
-
 u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
@@ -206,26 +179,6 @@ void bishrOne(BigInt* op)
     op->val[0] >>= 1;
 }
 
-void biinc(BigInt* op)
-{
-    op->val[op->size - 1]++;
-    bool carry = op->val[op->size - 1] & carryMask;
-    if(carry)
-    {
-        op->val[op->size - 1] &= digitMask;
-        for(int i = op->size - 2; i >= 0; i--)
-        {
-            if(carry)
-                op->val[i]++;
-            carry = op->val[i] & carryMask;
-            if(carry)
-                op->val[i] &= digitMask;
-            else
-                return;
-        }
-    }
-}
-
 void biTwoComplement(BigInt* op)
 {
     for(int i = 0; i < op->size; i++)
@@ -238,13 +191,9 @@ void biTwoComplement(BigInt* op)
 
 void biPrint(BigInt* op)
 {
-    int numQwords = ceil((op->size * 63.0) / 64.0);
-    for(int qword = 0; qword < numQwords; qword++)
+    for(int i = 0; i < op->size; i++)
     {
-        u64 bits = 0;
-        for(int i = 0; i < 64; i++)
-            bits |= (biNthBit(op, 64 * (numQwords - 1 - qword) + i) << i);
-        printf("%016llx", bits);
+        printf("%016llx", op->val[i]);
     }
     puts("");
 }
@@ -300,7 +249,6 @@ void profiler()
         printf("Function %s ran %e times per sec.\n", #func, perSec); \
     }
     profile(bimul);
-    profile(bimulOld);
     profile(biadd);
     profile(bisub);
 }

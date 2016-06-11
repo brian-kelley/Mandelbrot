@@ -1,21 +1,53 @@
-; void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
+; Notes on System V ABI:
+; pointer/int argument passing order:
+;   rdi, rsi, rdx, rccx, r8, r9
+; pointer/int returning order:
+;   rax, rdx
+; free registers (no need to push/pop):
+;   rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
-global _bimul
-global _longmul
+;global _bimul       ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
+;global _biadd       ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
+;global _bisub       ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
+global _biinc        ; void biinc(BigInt* op)
 
 section .text
 
-_longmul:
-; according to 64 bit System V:
-; f1 in rdi
-; f2 in rsi
-; phi in rdx
-; plo in rcx
-mov r8, rdx        ; save phi because mul overwrites rdx
-mov rax, rdi
-mul qword rsi
-; high qword of result in rdx, low in rax
-mov [r8], rdx
-mov [rcx], rax
+;_bimul:
+; rdi = BigInt* dst
+; rsi = BigInt* lhs
+; rdx = BigInt* rhs
+;ret
+
+;_biadd:
+; rdi = BigInt* dst
+; rsi = BigInt* lhs
+; rdx = BigInt* rhs
+;ret
+
+;_bisub:
+; rdi = BigInt* dst
+; rsi = BigInt* lhs
+; rdx = BigInt* rhs
+;ret
+
+_biinc:
+; rdi = BigInt* op
+xor rcx, rcx
+mov rdx, [rdi]              ; rdx = ptr to first word
+mov ecx, [rdi + 8]          ; rcx = # of 64-bit words
+dec rcx
+shl rcx, 3                  ; ecx = byte offset of least sig word
+mov rsi, [rdi]              ; rsi points to first word
+add rsi, rcx                ; rsi poins to last word
+inc qword [rsi]             ; increment lowest word
+.loop:
+jnc .done                   ; only need to enter loop if carry is set
+sub rsi, 8
+inc qword [rsi]
+cmp rsi, rdx                ; did the most significant word just get ++?
+je .done
+jmp .loop
+.done:
 ret
 

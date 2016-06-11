@@ -510,7 +510,16 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    profiler();
+    BigInt lol = BigIntCtor(2);
+    lol.val[1] = 0xFFFFFFFFFFFA0000;
+    while(lol.val[0] == 0)
+    {
+        biinc(&lol);
+        printf("SIZE IS %i\n", lol.size);
+        biPrint(&lol);
+    }
+
+    //profiler();
     return 0;
     
     //Process cli arguments first

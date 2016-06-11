@@ -30,13 +30,13 @@ BigInt BigIntCtor(int size);
 BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
-void bimulOld(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
+
 u64 biadd(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
 void bisub(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
-void biinc(BigInt* op);                            //increment, no overflow check
+void biinc(BigInt* op);
 void bishlOne(BigInt* op);
 void bishl(BigInt* op, int bits);
 void bishr(BigInt* op, int bits);
