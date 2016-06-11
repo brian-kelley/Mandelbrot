@@ -40,11 +40,11 @@ dec rcx
 shl rcx, 3                  ; ecx = byte offset of least sig word
 mov rsi, [rdi]              ; rsi points to first word
 add rsi, rcx                ; rsi poins to last word
-inc qword [rsi]             ; increment lowest word
+add qword [rsi], 1          ; increment lowest word
 .loop:
 jnc .done                   ; only need to enter loop if carry is set
 sub rsi, 8
-inc qword [rsi]
+add qword [rsi], 1
 cmp rsi, rdx                ; did the most significant word just get ++?
 je .done
 jmp .loop
