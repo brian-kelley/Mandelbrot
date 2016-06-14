@@ -8,13 +8,16 @@ all:
 	gcc ${CFLAGS} ${SOURCES} routines.o -lc -lpthread -o build/Mandelbrot
 
 linux:
-	gcc ${CFLAGS} ${SOURCES} -lc -lpthread -o build/Mandelbrot
+	nasm -f macho64 routines.asm -o routines.o
+	gcc ${CFLAGS} ${SOURCES} routines.o -lc -lpthread -o build/Mandelbrot
 
 debug:
-	gcc ${DEBUGFLAGS} ${SOURCES} -lc -lpthread -o build/Mandelbrot
+	nasm -f macho64 routines.asm -o routines.o
+	gcc ${DEBUGFLAGS} ${SOURCES} routines.o -lc -lpthread -o build/Mandelbrot
 
 fast:
-	gcc ${FASTCFLAGS} ${SOURCES} -lc -lpthread -o build/Mandelbrot
+	nasm -f macho64 routines.asm -o routines.o
+	gcc ${FASTCFLAGS} ${SOURCES} routines.o -lc -lpthread -o build/Mandelbrot
 
 bigintAsm:
 	gcc ${CFLAGS} -S bigint.c -o bigint.asm

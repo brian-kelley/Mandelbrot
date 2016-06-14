@@ -44,7 +44,7 @@ bool biAddWord(BigInt* bi, u64 word, int position)
     return carry;
 }
 
-void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //zero out dst
     int words = lhs->size;
@@ -225,8 +225,8 @@ u64 biNthBit(BigInt* op, int n)
 void profiler()
 {
     int prec = 5;
-    u64 trials = 100;
-    u64 operations = 300000;
+    u64 trials = 10;
+    u64 operations = 3000000;
     BigInt op1 = BigIntCtor(prec);
     BigInt op2 = BigIntCtor(prec);
     BigInt dst = BigIntCtor(prec);
@@ -235,7 +235,12 @@ void profiler()
         clock_t start = clock(); \
         for(u64 i = 0; i < trials; i++) \
         { \
-            for(int j = 0; j < prec; j++) \
+            for(int j = 0; j < 2; j++) \
+            { \
+                op1.val[j] = 0; \
+                op2.val[j] = 0; \
+            } \
+            for(int j = 2; j < prec; j++) \
             { \
                 op1.val[j] = ((u64) rand()) << 32 ^ (u64) rand(); \
                 op2.val[j] = ((u64) rand()) << 32 ^ (u64) rand(); \
@@ -248,7 +253,26 @@ void profiler()
         double perSec = (double) trials * (double) operations / ((double) clock() - start) * CLOCKS_PER_SEC; \
         printf("Function %s ran %e times per sec.\n", #func, perSec); \
     }
+#define profileUnary(func) \
+    { \
+        clock_t start = clock(); \
+        for(u64 i = 0; i < trials; i++) \
+        { \
+            for(int j = 0; j < prec; j++) \
+            { \
+                op1.val[j] = ((u64) rand()) << 32 ^ (u64) rand(); \
+            } \
+            for(u64 j = 0; j < operations; j++) \
+            { \
+                func(&dst); \
+            } \
+        } \
+        double perSec = (double) trials * (double) operations / ((double) clock() - start) * CLOCKS_PER_SEC; \
+        printf("Function %s ran %e times per sec.\n", #func, perSec); \
+    }
     profile(bimul);
+    profile(bimulC);
     profile(biadd);
     profile(bisub);
+    profileUnary(biinc);
 }

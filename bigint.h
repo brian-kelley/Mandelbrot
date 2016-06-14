@@ -35,6 +35,7 @@ BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
 void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
+void bimulC(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
 

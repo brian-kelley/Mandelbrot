@@ -510,6 +510,19 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
+    BigInt b1 = BigIntCtor(4);
+    BigInt b2 = BigIntCtor(4);
+    BigInt dst = BigIntCtor(8);
+    b1.val[0] = 45;
+    b2.val[0] = 10;
+    printf("b1 val: %p\n", b1.val);
+    printf("b2 val: %p\n", b2.val);
+    printf("dst val: %p\n", dst.val);
+    bimul(&dst, &b1, &b2);
+    printf("%llu * %llu = %llu\n", b1.val[0], b2.val[0], dst.val[1]);
+    return 0;
+    profiler();
+    /*
     BigInt lol = BigIntCtor(2);
     lol.val[1] = 0xFFFFFFFFFFFA0000;
     while(lol.val[0] == 0)
@@ -521,6 +534,7 @@ int main(int argc, const char** argv)
 
     //profiler();
     return 0;
+    */
     
     //Process cli arguments first
     //Set all the arguments to default first
