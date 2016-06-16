@@ -89,6 +89,37 @@ int getConvRate(FP* real, FP* imag)
     return iter == maxiter ? -1 : iter;
 }
 
+int getConvRate1(FP* real, FP* imag)
+{
+    //real, imag make up "c" in z = z^2 + c
+    MAKE_STACK_FP(four);
+    loadValue(&four, 4);
+    MAKE_STACK_FP(zr);
+    loadValue(&zr, 0);
+    MAKE_STACK_FP(zi);
+    loadValue(&zi, 0);
+    MAKE_STACK_FP(zrsquare);
+    MAKE_STACK_FP(zisquare);
+    MAKE_STACK_FP(zri);
+    MAKE_STACK_FP(mag);
+    int iter = 0;
+    for(; iter < maxiter; iter++)
+    {
+        fpmul3(&zrsquare, &zr, &zr);
+        fpmul3(&zisquare, &zi, &zi);
+        fpmul3(&zri, &zr, &zi);
+        //want 2 * zr * zi
+        fpshlOne(zri);
+        fpsub3(&zr, &zrsquare, &zisquare);
+        fpadd2(&zr, real);
+        fpadd3(&zi, &zri, imag);
+        fpadd3(&mag, &zrsquare, &zisquare);
+        if(mag.value.val[0] >= four.value.val[0])
+            break;
+    }
+    return iter == maxiter ? -1 : iter;
+}
+
 int getConvRateCapped(FP* real, FP* imag, int localMaxIter)
 {
     //real, imag make up "c" in z = z^2 + c
@@ -510,31 +541,26 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    BigInt b1 = BigIntCtor(4);
-    BigInt b2 = BigIntCtor(4);
-    BigInt dst = BigIntCtor(8);
-    b1.val[0] = 45;
-    b2.val[0] = 10;
-    printf("b1 val: %p\n", b1.val);
-    printf("b2 val: %p\n", b2.val);
-    printf("dst val: %p\n", dst.val);
-    bimul(&dst, &b1, &b2);
-    printf("%llu * %llu = %llu\n", b1.val[0], b2.val[0], dst.val[1]);
-    return 0;
-    profiler();
-    /*
-    BigInt lol = BigIntCtor(2);
-    lol.val[1] = 0xFFFFFFFFFFFA0000;
-    while(lol.val[0] == 0)
+    int prec = 3;
+    BigInt b1 = BigIntCtor(prec);
+    BigInt b2 = BigIntCtor(prec);
+    BigInt dst = BigIntCtor(prec * 2);
+    for(int i = 0; i < prec; i++)
     {
-        biinc(&lol);
-        printf("SIZE IS %i\n", lol.size);
-        biPrint(&lol);
+        b1.val[i] = 0xFFFFFFFFFFFFFFFF;
+        b2.val[i] = 0xFFFFFFFFFFFFFFFF;
     }
-
-    //profiler();
+    bimul(&dst, &b1, &b2);
+    printf("bi1: ");
+    biPrint(&b1);
+    printf("bi2: ");
+    biPrint(&b2);
+    printf("dst: ");
+    biPrint(&dst);
     return 0;
-    */
+
+    profiler();
+    return 0;
     
     //Process cli arguments first
     //Set all the arguments to default first

@@ -14,21 +14,31 @@ global _biinc        ; void biinc(BigInt* op)
 section .text
 
 _bimul:
-push r12
 ; rdi = BigInt* dst
 ; rsi = BigInt* lhs
 ; rdx = BigInt* rhs
-mov r11, rdi
-; r11 = &dst
+xor rcx, rcx
+mov ecx, [rsi + 8]          ; ecx = # of words
+cmp ecx, 1
+je .bimul1
+cmp ecx, 2
+je .bimul2
 mov r10, rdx
 ; r10 = &rhs
+mov r11, rdi
+; r11 = &dst
 mov rdi, [r11]              ; rdi points to dst words
-mov ecx, [r10 + 8]          ; ecx = # of words
+xor rdx, rdx
 mov edx, ecx                ; save a copy of # of words to r9 (ecx gets lost)
+; r11 = &dst
+; rsi = &lhs
+; r10 = &rhs
+; rdx = # of words
 mov r9, rdx
 shl rcx, 1                  ; rcx needs the # of dwords to zero out
 xor eax, eax                ; eax has the 0 to write out
 rep stosd                   ; writes eax to ecx dwords starting at edi
+push r12
 ; now dst words are all 0 
 mov r11, [r11]
 mov rsi, [rsi]
@@ -37,8 +47,6 @@ mov r10, [r10]
 ; rsi = lhs->val
 ; r10 = rhs->val
 ; r9 = # of qwords to operate on
-; rax, rcx, rdx, rdi, r8 free to use
-
 ; vars needed here:
 ;   dst starting word (ptr) ; r11
 ;   lhs starting word (ptr) ; rsi
@@ -51,9 +59,7 @@ mov r10, [r10]
 ;   number of words         ; r9
 ;   lhs word address        ; rcx
 ;   rhs word address        ; rdi
-
 xor r12, r12                ; zero out loop i
-xor r8, r8
 .iloop:                     ; loops from original bimul implementation
     xor r8, r8              ; zero out loop j
     .jloop:
@@ -71,13 +77,12 @@ xor r8, r8
         ; rcx has the high word dst
         add [rcx + 8], rax
         adc [rcx], rdx
-        sub rcx, 16
         jnc .carryDone
         .handleCarry:
             sub rcx, 8
             adc qword [rcx], 1
             jc .handleCarry
-        .carryDone
+        .carryDone:
         inc r8
         cmp r8, r9
         je .jdone
@@ -90,15 +95,79 @@ xor r8, r8
 .idone:
 pop r12
 ret
+.bimul1:
+; rdi = BigInt* dst
+; rsi = BigInt* lhs
+; rdx = BigInt* rhs
+mov rdi, [rdi]
+mov rsi, [rsi]
+mov rdx, [rdx]
+mov rax, [rsi]
+mul qword [rdx]
+mov [rdi], rdx
+mov [rdi + 8], rax
+ret
+.bimul2:
+; rdi = BigInt* dst
+; rsi = BigInt* lhs
+; rdx = BigInt* rhs
+; lhs, rhs have 2 word; dst has 4
+; l0 * r0 => dst[0, 1]
+; l0 * r1 => dst[1, 2]
+; l1 * r0 => dst[1, 2]
+; l1 * r1 => dst[2, 3]
+; free regs: r8 r9 r10 r11
+; first get rdi, rsi, rdx pointing to the actual words
+xor rcx, rcx
+mov rdi, [rdi]
+mov rsi, [rsi]
+mov r8, [rdx]
+; do l0 * r0
+mov rax, [rsi]
+mul qword [r8]
+; directly assign to dst words 0 and 1
+mov [rdi], rdx
+mov [rdi + 8], rax
+; do l1 * r1
+mov rax, [rsi + 8]
+mul qword [r8 + 8]
+mov [rdi + 16], rdx
+mov [rdi + 24], rax
+; do l0 * r1
+mov rax, [rsi]
+mul qword [r8 + 8]
+add qword [rdi + 16], rax
+adc qword [rdi + 8], rdx
+adc qword [rdi], rcx        ; just add carry bit
+mov rax, [rsi + 8]
+mul qword [r8]
+add qword [rdi + 16], rax
+adc qword [rdi + 8], rdx
+adc qword [rdi], rcx        ; just add carry bit
+ret
 
-;_biadd:
+_biadd:
 ;rdi = BigInt* dst
 ;rsi = BigInt* lhs
 ;rdx = BigInt* rhs
-;xor rcx, rcx
-;mov rdx, [rdi]
-;mov ecx, [rdi + 8]
-;ret
+xor rax, rax
+mov eax, [rdi + 8]
+dec rax
+mov r8, [rdi]             ; rax == r8 means done
+add rax, 0                    ; clear carry flag
+.loop:
+lea rdi, [rdi + 8 * rax]
+lea rsi, [rsi + 8 * rax]
+lea rdx, [rdx + 8 * rax]
+mov r9, [rsi]
+adc r9, [rdx]
+mov [rdi], r9
+dec rax
+cmp rdi, r8
+je .done
+jmp .loop
+.done:
+ret
 
 ;_bisub:
 ; rdi = BigInt* dst

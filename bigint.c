@@ -24,24 +24,11 @@ void BigIntDtor(BigInt* bi)
     free(bi->val);
 }
 
-bool biAddWord(BigInt* bi, u64 word, int position)
+u64 biAddWord(BigInt* dst, u64 word, int position)
 {
-    word &= digitMask;
-    bi->val[position] += word;
-    u64 carry = bi->val[position] & carryMask;
-    bi->val[position] &= digitMask;
-    for(int i = position - 1; i >= 0; i--)
-    {
-        if(carry)
-        {
-            bi->val[i]++;
-            carry = bi->val[i] & carryMask;
-            bi->val[i] &= digitMask;
-        }
-        else
-            break;
-    }
-    return carry;
+    u128 sum = (u128) dst->val[position] + word;
+    dst->val[position] = sum;
+    return sum >> 64;
 }
 
 void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
@@ -52,44 +39,68 @@ void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
         dst->val[i] = 0;
     //first, compute the low half of the full result
     u64 hi, lo;
-    unsigned __int128 prod;
+    u128 prod;
     for(int i = words - 1; i >= 0; i--)
     {
         for(int j = words - 1; j >= 0; j--)
         {
-            prod = (unsigned __int128) lhs->val[i] * (unsigned __int128) rhs->val[j];
+            prod = (u128) lhs->val[i] * (u128) rhs->val[j];
             int destWord = i + j + 1;
-            lo = prod & 0x7FFFFFFFFFFFFFFF;
-            hi = prod >> 63;
-            biAddWord(dst, lo, destWord);
-            biAddWord(dst, hi, destWord - 1);
+            u128 losum = (u128) dst->val[destWord] + (u64) prod;
+            u128 hisum = (u128) dst->val[destWord - 1] + (prod >> 64);
+            if(losum >> 64)
+                hisum++;
+            dst->val[destWord] = losum;
+            dst->val[destWord - 1] = hisum;
+            destWord -= 2;
+            while(hisum >> 64 && destWord > 0)
+            {
+                hisum = (u128) dst->val[destWord];
+                hisum++;
+                dst->val[destWord--] = hisum;
+            }
         }
     }
 }
 
-u64 biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void bimul1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)
+{
+    u128 prod = (u128) lhs->val[0] * rhs->val[0];
+    dst->val[1] = prod;
+    dst->val[0] = prod >> 64;
+}
+
+void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
-    for(int i = 0; i < dst->size; i++)
-        dst->val[i] = lhs->val[i];
-    u64 carry;
-    for(int i = rhs->size - 1; i >= 0; i--)
-        carry = biAddWord(dst, rhs->val[i], i);
-    //carry will have the carry bit of the last word (for i = 0)
-    return carry;
+    memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
+    u64 carry = 0;
+    u128 sum;
+    for(int i = lhs->size - 1; i >= 0; i--)
+    {
+        sum = (u128) dst->val[i] + rhs->val[i] + carry ? 1 : 0;
+        dst->val[i] = sum;
+        carry = sum;
+    }
 }
 
 void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy words of lhs into dst
-    for(int i = 0; i < dst->size; i++)
-        dst->val[i] = lhs->val[i];
+    memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
+    u64 carry = 1;
+    u128 sum;
     for(int i = dst->size - 1; i >= 0; i--)
-        biAddWord(dst, ~rhs->val[i] & digitMask, i);
+    {
+        sum = (u128) dst->val[i] + ~rhs->val[i] + carry ? 0 : 1;
+        dst->val[i] = sum;
+        carry = sum >> 64;
+    }
 }
 
 void bishl(BigInt* op, int bits)
 {
+    /*
     if(bits >= 63 * op->size)
     {
         memset(op->val, 0, op->size * sizeof(u64));
@@ -121,10 +132,12 @@ void bishl(BigInt* op, int bits)
             op->val[i] |= (moved >> hishift);
         }
     }
+    */
 }
 
 void bishr(BigInt* op, int bits)
 {
+    /*
     if(bits >= 63 * op->size)
     {
         memset(op->val, 0, op->size * sizeof(u64));
@@ -155,6 +168,7 @@ void bishr(BigInt* op, int bits)
             op->val[i] |= (moved << hishift);
         }
     }
+    */
 }
 
 void bishlOne(BigInt* op)
@@ -162,11 +176,8 @@ void bishlOne(BigInt* op)
     for(int i = 0; i < op->size - 1; i++)
     {
         op->val[i] <<= 1;
-        op->val[i] &= digitMask;
         op->val[i] |= (op->val[i + 1] & (1ULL << 62)) >> 62;
     }
-    op->val[op->size - 1] <<= 1;
-    op->val[op->size - 1] &= digitMask;
 }
 
 void bishrOne(BigInt* op)
@@ -184,7 +195,6 @@ void biTwoComplement(BigInt* op)
     for(int i = 0; i < op->size; i++)
     {
         op->val[i] = ~op->val[i];
-        op->val[i] &= digitMask;
     }
     biinc(op);
 }
@@ -222,14 +232,25 @@ u64 biNthBit(BigInt* op, int n)
     return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
 }
 
+void bimulC1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)
+{
+    u128 prod = (u128) lhs->val[0] * rhs->val[0];
+    dst->val[1] = prod;
+    dst->val[0] = prod >> 64;
+}
+
 void profiler()
 {
-    int prec = 5;
+    int prec = 2;
     u64 trials = 10;
     u64 operations = 3000000;
-    BigInt op1 = BigIntCtor(prec);
-    BigInt op2 = BigIntCtor(prec);
-    BigInt dst = BigIntCtor(prec);
+    BigInt op1;
+    op1.size = prec;
+    BigInt op2 = op1;
+    BigInt dst = op1;
+    op1.val = (u64*) alloca(prec * sizeof(u64));
+    op2.val = (u64*) alloca(prec * sizeof(u64));
+    dst.val = (u64*) alloca(prec * sizeof(u64));
 #define profile(func) \
     { \
         clock_t start = clock(); \
@@ -273,6 +294,7 @@ void profiler()
     profile(bimul);
     profile(bimulC);
     profile(biadd);
+    profile(biaddC);
     profile(bisub);
     profileUnary(biinc);
 }

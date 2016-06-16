@@ -1,4 +1,4 @@
-CFLAGS=-std=c99 -O3 -march=native -mtune=native -ffast-math
+CFLAGS=-std=c99 -Ofast -march=native -mtune=native -ffast-math
 DEBUGFLAGS=-std=c99 -g
 FASTCFLAGS=-std=c99 -O0
 SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c lodepng.c 
