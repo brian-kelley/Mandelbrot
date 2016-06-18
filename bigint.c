@@ -63,21 +63,19 @@ void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
-void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
-    memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
-    u64 carry = 0;
-    u128 sum;
+    bool carry;
     for(int i = lhs->size - 1; i >= 0; i--)
     {
-        sum = (u128) dst->val[i] + rhs->val[i] + carry ? 1 : 0;
-        dst->val[i] = (u64) sum;
-        carry = sum >> 64;
+        bool nextCarry = (lhs->val[i] & (1ULL << 63)) && (rhs->val[i] & (1ULL << 63));
+        dst->val[i] = lhs->val[i] + rhs->val[i] + (carry ? 1 : 0);
+        carry = nextCarry;
     }
 }
 
-void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void bisubC(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy words of lhs into dst
     memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));

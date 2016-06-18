@@ -541,71 +541,23 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    int prec = 3;
+    int prec = 4;
     BigInt b1 = BigIntCtor(prec);
     BigInt b2 = BigIntCtor(prec);
-    BigInt dst = BigIntCtor(prec);
+    BigInt dst = BigIntCtor(prec * 2);
     for(int i = 0; i < prec; i++)
     {
-        b1.val[i] = 0xABC0;
-        b2.val[i] = 0xABC0;
+        b1.val[i] = 0x123456789ABCDEF;
+        b2.val[i] = 0;
     }
-    biadd(&dst, &b1, &b2);
+    b2.val[prec - 1] = 1;
+    bimul(&dst, &b1, &b2);
     printf("bi1: ");
     biPrint(&b1);
     printf("bi2: ");
     biPrint(&b2);
     printf("dst: ");
     biPrint(&dst);
-    int shift = 4;
-    printf("shifting b1 left by %i\n", shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
-    bishl(&b1, shift);
-    printf("b1: ");
-    biPrint(&b1);
     return 0;
 
     profiler();
