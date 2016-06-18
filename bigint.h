@@ -34,19 +34,12 @@ BigInt BigIntCopy(BigInt* bi);
 void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
 void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);     // generic (asm)
-void bimul1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);
-void bimul2(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);
-void bimul3(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);
-void bimul4(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);
-void bimul5(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);
 
 void bimulC(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
-void bimulC1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
 
 void biadd(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
-void biaddC(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
 void bisub(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
 void biinc(BigInt* op);
 void bishlOne(BigInt* op);
@@ -57,10 +50,6 @@ void biTwoComplement(BigInt* op);
 void biPrint(BigInt* op);
 void biPrintBin(BigInt* op);
 u64 biNthBit(BigInt* op, int n);
-
-u64 biAddWord(BigInt* bi, u64 word, int position);
-//routine implemented in asm
-extern void longmul(u64 f1, u64 f2, u64* phi, u64* plo);
 
 void profiler();
 

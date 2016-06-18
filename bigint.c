@@ -63,14 +63,7 @@ void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
-void bimul1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)
-{
-    u128 prod = (u128) lhs->val[0] * rhs->val[0];
-    dst->val[1] = prod;
-    dst->val[0] = prod >> 64;
-}
-
-void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
     memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
@@ -79,8 +72,8 @@ void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
     for(int i = lhs->size - 1; i >= 0; i--)
     {
         sum = (u128) dst->val[i] + rhs->val[i] + carry ? 1 : 0;
-        dst->val[i] = sum;
-        carry = sum;
+        dst->val[i] = (u64) sum;
+        carry = sum >> 64;
     }
 }
 
@@ -100,39 +93,28 @@ void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 
 void bishl(BigInt* op, int bits)
 {
-    /*
-    if(bits >= 63 * op->size)
-    {
-        memset(op->val, 0, op->size * sizeof(u64));
-        return;
-    }
     //note: the highest bit of each word is not used
-    const int wordBits = 63;
+    const int words = op->size;
+    const int wordBits = 64;
     int wordShift = bits / wordBits;
     int bitShift = bits % wordBits;
     //first, apply word shift
-    for(int i = 0; i < op->size - wordShift; i++)
+    for(int i = 0; i < words - wordShift; i++)
         op->val[i] = op->val[i + wordShift];
-    for(int i = op->size - wordShift; i < op->size; i++)
+    for(int i = op->size - wordShift; i < words; i++)
         op->val[i] = 0;
-    if(bitShift == 0)
+    if(bitShift == 0 || wordShift >= op->size)
         return;
-    //determine the bit mask for the bits that are copied up into the next word
-    int hishift = wordBits - bits;
-    u64 mask = ((1ULL << bits) - 1) << hishift;
-    //do the lowest word manually
-    u64 moved;
-    for(int i = 0; i < op->size; i++)
+    //shl each word by bitShift
+    u64 grabMask = ((1ULL << bitShift) - 1) << (64 - bitShift);
+    u64 transfer = 0;
+    for(int i = words - 1; i >= 0; i--)
     {
-        op->val[i] <<= bits;
-        op->val[i] &= digitMask;
-        if(i < op->size - 1)
-        {
-            moved = op->val[i + 1] & mask;
-            op->val[i] |= (moved >> hishift);
-        }
+        u64 temp = op->val[i] & grabMask;
+        op->val[i] <<= bitShift;
+        op->val[i] |= transfer;
+        transfer = temp >> (64 - bits);
     }
-    */
 }
 
 void bishr(BigInt* op, int bits)
@@ -294,7 +276,6 @@ void profiler()
     profile(bimul);
     profile(bimulC);
     profile(biadd);
-    profile(biaddC);
     profile(bisub);
     profileUnary(biinc);
 }

@@ -55,7 +55,10 @@ void fpadd2(FP* lhs, FP* rhs)
     {
         //add (can overflow)
         for(int i = words - 1; i >= 0; i--)
-            biAddWord(&lhs->value, rhs->value.val[i], i);
+        {
+            //TODO!!!!
+            //biAddWord(&lhs->value, rhs->value.val[i], i);
+        }
     }
 }
 
@@ -100,7 +103,9 @@ void fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
         biTwoComplement(&rhs->value);
         //add
         for(int i = lhs->value.size - 1; i >= 0; i--)
-            biAddWord(&dst->value, rhs->value.val[i], i);
+        {
+            //TODO: biAddWord(&dst->value, rhs->value.val[i], i);
+        }
         //undo the 2s complement
         biTwoComplement(&rhs->value);
         dst->sign = lhs->sign;

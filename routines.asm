@@ -7,8 +7,6 @@
 ;   rax, rcx, rdx, rsi, rdi, r8, r9, r10, r11
 
 global _bimul        ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
-global _biadd        ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
-global _bisub        ; void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 global _biinc        ; void biinc(BigInt* op)
 
 section .text
@@ -51,7 +49,6 @@ mov r10, [r10]
 ;   dst starting word (ptr) ; r11
 ;   lhs starting word (ptr) ; rsi
 ;   rhs starting word (ptr) ; r10
-;   dst word index          ; rbx
 ;   lhs word index          ; r12
 ;   rhs word index          ; r8
 ;   eax free for mulq       ; rax
@@ -145,35 +142,6 @@ add qword [rdi + 16], rax
 adc qword [rdi + 8], rdx
 adc qword [rdi], rcx        ; just add carry bit
 ret
-
-_biadd:
-;rdi = BigInt* dst
-;rsi = BigInt* lhs
-;rdx = BigInt* rhs
-xor rax, rax
-mov eax, [rdi + 8]
-dec rax
-mov r8, [rdi]             ; rax == r8 means done
-add rax, 0                    ; clear carry flag
-.loop:
-lea rdi, [rdi + 8 * rax]
-lea rsi, [rsi + 8 * rax]
-lea rdx, [rdx + 8 * rax]
-mov r9, [rsi]
-adc r9, [rdx]
-mov [rdi], r9
-dec rax
-cmp rdi, r8
-je .done
-jmp .loop
-.done:
-ret
-
-;_bisub:
-; rdi = BigInt* dst
-; rsi = BigInt* lhs
-; rdx = BigInt* rhs
-;ret
 
 _biinc:
 ; rdi = BigInt* op
