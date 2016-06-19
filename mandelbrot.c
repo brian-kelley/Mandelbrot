@@ -541,16 +541,13 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    int prec = 2;
+    int prec = 1;
     BigInt b1 = BigIntCtor(prec);
     BigInt b2 = BigIntCtor(prec);
     BigInt dst = BigIntCtor(prec);
-    for(int i = 0; i < prec; i++)
-    {
-        b1.val[i] = ~0ULL;
-        b2.val[i] = ~0ULL;
-    }
-    biadd(&dst, &b1, &b2);
+    b1.val[0] = 0xFFFFFFFFFFFF;
+    b2.val[0] = 0xAAAAAAAAA;
+    bisub(&dst, &b1, &b2);
     printf("bi1: ");
     biPrint(&b1);
     printf("bi2: ");

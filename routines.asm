@@ -154,7 +154,7 @@ mov r8, [rdi]
 mov r9, [rsi]
 mov r10, [rdx]
 mov ecx, [rdi + 8]
-add rcx, 0
+add cl, 0
 .addloop:
 lea rdi, [r8 + 8 * rcx - 8]
 lea rsi, [r9 + 8 * rcx - 8]
@@ -169,6 +169,21 @@ _bisub:
 ; rdi = BigInt* dst
 ; rsi = BigInt* lhs
 ; rdx = BigInt* rhs
+mov r8, [rdi]
+mov r9, [rsi]
+mov r10, [rdx]
+mov ecx, [rdi + 8]
+neg eax
+.addloop:
+lea rdi, [r8 + 8 * rcx - 8]
+lea rsi, [r9 + 8 * rcx - 8]
+lea rdx, [r10 + 8 * rcx - 8]
+mov rax, [rsi]
+mov r11, [rdx]
+not r11
+adc rax, r11
+mov [rdi], rax
+loop .addloop
 ret
 
 _biinc:
