@@ -541,17 +541,16 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    int prec = 4;
+    int prec = 2;
     BigInt b1 = BigIntCtor(prec);
     BigInt b2 = BigIntCtor(prec);
-    BigInt dst = BigIntCtor(prec * 2);
+    BigInt dst = BigIntCtor(prec);
     for(int i = 0; i < prec; i++)
     {
-        b1.val[i] = 0x123456789ABCDEF;
-        b2.val[i] = 0;
+        b1.val[i] = ~0ULL;
+        b2.val[i] = ~0ULL;
     }
-    b2.val[prec - 1] = 1;
-    bimul(&dst, &b1, &b2);
+    biadd(&dst, &b1, &b2);
     printf("bi1: ");
     biPrint(&b1);
     printf("bi2: ");

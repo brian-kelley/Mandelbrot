@@ -150,23 +150,19 @@ _biadd:
 ;rdi = BigInt* dst
 ;rsi = BigInt* lhs
 ;rdx = BigInt* rhs
-xor rax, rax
-mov eax, [rdi + 8]
-dec rax
-mov r8, [rdi]             ; rax == r8 means done
-add rax, 0                    ; clear carry flag
-.loop:
-lea rdi, [rdi + 8 * rax]
-lea rsi, [rsi + 8 * rax]
-lea rdx, [rdx + 8 * rax]
+mov r8, [rdi]
 mov r9, [rsi]
-adc r9, [rdx]
-mov [rdi], r9
-dec rax
-cmp rdi, r8
-je .done
-jmp .loop
-.done:
+mov r10, [rdx]
+mov ecx, [rdi + 8]
+add rcx, 0
+.addloop:
+lea rdi, [r8 + 8 * rcx - 8]
+lea rsi, [r9 + 8 * rcx - 8]
+lea rdx, [r10 + 8 * rcx - 8]
+mov rax, [rsi]
+adc rax, [rdx]
+mov [rdi], rax
+loop .addloop
 ret
 
 _bisub:
