@@ -60,37 +60,7 @@ Uint32 getColor(int num)
 
 int getConvRate(FP* real, FP* imag)
 {
-    //real, imag make up "c" in z = z^2 + c
-    MAKE_STACK_FP(four);
-    loadValue(&four, 4);
-    MAKE_STACK_FP(zr);
-    loadValue(&zr, 0);
-    MAKE_STACK_FP(zi);
-    loadValue(&zi, 0);
-    MAKE_STACK_FP(zrsquare);
-    MAKE_STACK_FP(zisquare);
-    MAKE_STACK_FP(zri);
-    MAKE_STACK_FP(mag);
-    int iter = 0;
-    for(; iter < maxiter; iter++)
-    {
-        fpmul3(&zrsquare, &zr, &zr);
-        fpmul3(&zisquare, &zi, &zi);
-        fpmul3(&zri, &zr, &zi);
-        //want 2 * zr * zi
-        fpshlOne(zri);
-        fpsub3(&zr, &zrsquare, &zisquare);
-        fpadd2(&zr, real);
-        fpadd3(&zi, &zri, imag);
-        fpadd3(&mag, &zrsquare, &zisquare);
-        if(mag.value.val[0] >= four.value.val[0])
-            break;
-    }
-    return iter == maxiter ? -1 : iter;
-}
-
-int getConvRate1(FP* real, FP* imag)
-{
+    //printf("Iterating (%Lf, %Lf)\n", getValue(real), getValue(imag));
     //real, imag make up "c" in z = z^2 + c
     MAKE_STACK_FP(four);
     loadValue(&four, 4);
@@ -506,7 +476,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
                 fpadd2(&targetY, &buf.pstride);
         }
         //set screen position to the best pixel
-        if(prec < getPrec(getApproxExpo(&buf.pstride)))
+        if(upgradePrec(&buf.pstride))
         {
             INCR_PREC(buf.pstride);
             INCR_PREC(targetX);
@@ -534,23 +504,36 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     count++;
 }
 
-int getPrec(int expo)
+bool upgradePrec(FP* pstride)
 {
-    return ceil(-expo / 30) + 1;
+    //is a bit in the lowest half of pstride high?
+    //Assume that pstride must always maintain 10 bits of significant bits
+    const int minSigBits = 20;
+    int numBits = pstride->value.size * 64;
+    //Scan for the first nonzero bit
+    printf("pstride as int: ");
+    biPrint(&pstride->value);
+    for(int i = 0; i < numBits; i++)
+    {
+        if(biNthBit(&pstride->value, i))
+        {
+            printf("Found first 1 bit at index %i\n", i);
+            if(numBits - i <= minSigBits)
+            {
+                return true;
+            }
+            else
+            {
+                return false;
+            }
+        }
+    }
+    assert("pstride is zero!" == 0);
+    return false;
 }
 
 int main(int argc, const char** argv)
 {
-    BigInt b = BigIntCtor(2);
-    b.val[0] = 0xFFFFFFFF;
-    b.val[1] = 0xAAAAAAAAAA;
-    for(int i = 0; i < 20; i++)
-    {
-        biPrint(&b);
-        bishrOne(&b);
-    }
-    return 0;
-
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
@@ -633,7 +616,7 @@ int main(int argc, const char** argv)
         fpshrOne(coarse.pstride);
         recomputeMaxIter(1);
         int timeDiff = time(NULL) - start;
-        if(getPrec(getApproxExpo(&image.pstride)) > prec)
+        if(upgradePrec(&image.pstride))
         {
             INCR_PREC(image.pstride);
             INCR_PREC(coarse.pstride);

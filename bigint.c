@@ -165,15 +165,6 @@ void bishrOne(BigInt* op)
     }
 }
 
-void biTwoComplement(BigInt* op)
-{
-    for(int i = 0; i < op->size; i++)
-    {
-        op->val[i] = ~op->val[i];
-    }
-    biinc(op);
-}
-
 void biPrint(BigInt* op)
 {
     for(int i = 0; i < op->size; i++)
@@ -198,13 +189,13 @@ void biPrintBin(BigInt* op)
     puts("");
 }
 
-u64 biNthBit(BigInt* op, int n)
+bool biNthBit(BigInt* op, int n)
 {
-    if(n < 0 || n >= op->size * 63)
-        return 0;
-    int word = n / 63;
-    int bit = n % 63;
-    return op->val[op->size - 1 - word] & (1ULL << bit) ? 1 : 0;
+    if(n < 0 || n >= op->size * 64)
+        return false;
+    int word = n / 64;
+    int bit = n % 64;
+    return op->val[op->size - 1 - word] & (1ULL << bit) ? true : false;
 }
 
 void bimulC1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)

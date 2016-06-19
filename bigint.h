@@ -49,7 +49,7 @@ void bishrOne(BigInt* op);
 void biTwoComplement(BigInt* op);
 void biPrint(BigInt* op);
 void biPrintBin(BigInt* op);
-u64 biNthBit(BigInt* op, int n);
+bool biNthBit(BigInt* op, int n);
 
 void profiler();
 

@@ -37,5 +37,5 @@ void* workerFunc(void* buffer);         //pthread worker thread function
 void* workerFuncCapped(void* buffers);         //pthread worker thread function
 int getConvRate(FP* real, FP* imag);  //actually iterate z = z^2 + c, return iteration count
 int getConvRateCapped(FP* real, FP* imag, int localMaxIter);  //actually iterate z = z^2 + c, return iteration count
-int getPrec(int zoomExpo);  //get the precision level required (pass raw biased value)
+bool upgradePrec(FP* pstride);  //given pstride, does precision need to be upgraded
 

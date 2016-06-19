@@ -38,27 +38,17 @@ void fpadd2(FP* lhs, FP* rhs)
             lhs = rhs;
             rhs = temp;
         }
-        for(int i = 0; i < words; i++)
-            dst.val[i] = lhs->value.val[i];
-        //2s complement rhs
-        biTwoComplement(&rhs->value);
-        //add
-        biadd(&dst, &lhs->value, &rhs->value);
-        //undo the 2s complement
-        biTwoComplement(&rhs->value);
-        //copy the result into the real destination FP 
+        bisub(&dst, &lhs->value, &rhs->value);
         for(int i = 0; i < words; i++)
             actualDst->value.val[i] = dst.val[i];
         actualDst->sign = lhs->sign;
     }
     else
     {
-        //add (can overflow)
-        for(int i = words - 1; i >= 0; i--)
-        {
-            //TODO!!!!
-            //biAddWord(&lhs->value, rhs->value.val[i], i);
-        }
+        //add (no overflow check)
+        BigInt tempLHS = {(u64*) alloca(words * sizeof(u64)), words};
+        memcpy(tempLHS.val, lhs->value.val, sizeof(u64) * words);
+        biadd(&lhs->value, &tempLHS, &rhs->value);
     }
 }
 
@@ -78,8 +68,7 @@ void fpmul2(FP* lhs, FP* rhs)
     wideDst.size = words * 2;
     wideDst.val = (u64*) alloca(words * 2 * sizeof(u64));
     bimul(&wideDst, &lhs->value, &rhs->value);
-    for(int i = 0; i < words; i++)
-        lhs->value.val[i] = wideDst.val[i];
+    memcpy(lhs->value.val, wideDst.val, words * sizeof(u64));
     lhs->sign = lhs->sign != rhs->sign;
     fpshl(*lhs, maxExpo);
 }
@@ -97,17 +86,7 @@ void fpadd3(FP* restrict dst, FP* lhs, FP* rhs)
             rhs = temp;
         }
         //copy lhs words into dst
-        for(int i = 0; i < lhs->value.size; i++)
-            dst->value.val[i] = lhs->value.val[i];
-        //2s complement rhs
-        biTwoComplement(&rhs->value);
-        //add
-        for(int i = lhs->value.size - 1; i >= 0; i--)
-        {
-            //TODO: biAddWord(&dst->value, rhs->value.val[i], i);
-        }
-        //undo the 2s complement
-        biTwoComplement(&rhs->value);
+        bisub(&dst->value, &lhs->value, &rhs->value);
         dst->sign = lhs->sign;
     }
     else
@@ -134,8 +113,7 @@ void fpmul3(FP* restrict dst, FP* lhs, FP* rhs)
     wideDst.val = (u64*) alloca(words * 2 * sizeof(u64));
     bimul(&wideDst, &lhs->value, &rhs->value);
     //copy the result into dst
-    for(int i = 0; i < words; i++)
-        dst->value.val[i] = wideDst.val[i];
+    memcpy(dst->value.val, wideDst.val, words * sizeof(u64));
     dst->sign = lhs->sign != rhs->sign;
     fpshl(*dst, maxExpo);
 }
@@ -155,7 +133,7 @@ int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > 
 void loadValue(FP* fp, long double val)
 {
     val /= (1 << (maxExpo - 1));
-    fp->value.val[0] = fabsl(val) * (1ULL << 62);
+    fp->value.val[0] = fabsl(val) * (1ULL << 63);
     fp->sign = val < 0;
 }
 
@@ -163,7 +141,7 @@ long double getValue(FP* fp)
 {
     if(fp->value.val[0])
     {
-        long double val = fp->value.val[0] / (long double) (1ULL << 62);
+        long double val = fp->value.val[0] / (long double) (1ULL << 63);
         val *= fp->sign ? -1 : 1;
         val *= (1 << (maxExpo - 1));
         return val;
@@ -178,12 +156,12 @@ long double getValue(FP* fp)
         }
         if(wordShift == fp->value.size)
             return 0;
-        long double val = fp->value.val[wordShift] / (long double) (1ULL << 62);
+        long double val = fp->value.val[wordShift] / (long double) (1ULL << 63);
         val *= fp->sign ? -1 : 1;
         int expo;
         long double mant = frexpl(val, &expo);
         expo += (maxExpo - 1);
-        expo -= 63 * wordShift;
+        expo -= 64 * wordShift;
         return ldexpl(mant, expo);
     }
 }
@@ -200,17 +178,15 @@ int getApproxExpo(FP* lhs)
 {
     int expo = maxExpo;   //assume the maximum value
     int i;
-    for(i = 0; i < lhs->value.size; i++)
+    while(lhs->value.val[i] == 0)
     {
-        if(lhs->value.val[i] == 0)
-            expo -= 63;
-        else
-            break;
+        expo -= 64;
+        i++;
     }
     if(i < lhs->value.size)
     {
         u64 word = lhs->value.val[i];
-        while((word & (1ULL << 62)) == 0)
+        while((word & (1ULL << 63)) == 0)
         {
             expo--;
             word <<= 1;
@@ -219,18 +195,9 @@ int getApproxExpo(FP* lhs)
     return expo;
 }
 
-void arithmeticTest()
-{
-    for(u64 i = 0;; i++)
-    {
-        if(i % 1000000 == 999999)
-            printf("%llu operand combinations tested.\n", i);
-    }
-}
-
 void fuzzTest()
 {
-    const long double tol = 1e-5;
+    const long double tol = 1e-6;
     srand(clock());
     int prec = 1;
     MAKE_STACK_FP(op1);
@@ -238,13 +205,16 @@ void fuzzTest()
     MAKE_STACK_FP(sum);
     MAKE_STACK_FP(diff);
     MAKE_STACK_FP(prod);
+    MAKE_STACK_FP(oldSum);
+    MAKE_STACK_FP(oldDiff);
+    MAKE_STACK_FP(oldProd);
     u64 tested = 0;
     while(true)
     {
         long double op[2];
         for(int i = 0; i < 2; i++)
         {
-            int ex = -4 + rand() % 7;
+            int ex = -3 + rand() % 5;
             long double mant = (long double) 1.0 / RAND_MAX * rand();
             if(rand() & 0x10)
                 mant *= -1;
@@ -276,6 +246,36 @@ void fuzzTest()
             if(fabsl((getValue(&prod) - actual) / actual) > tol)
             {
                 printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&prod));
+                break;
+            }
+        }
+        long double actualSum = getValue(&sum) + getValue(&op1);
+        long double actualDiff = getValue(&diff) - getValue(&op1);
+        long double actualProd = getValue(&prod) * getValue(&op1);
+        fpcopy(&oldSum, &sum);
+        fpcopy(&oldDiff, &diff);
+        fpcopy(&oldProd, &prod);
+        fpadd2(&sum, &op1);
+        fpsub2(&diff, &op1);
+        fpmul2(&prod, &op1);
+        {
+            if(fabsl((getValue(&sum) - actualSum) / actualSum) > tol)
+            {
+                printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldSum), getValue(&sum));
+                break;
+            }
+        }
+        {
+            if(fabsl((getValue(&diff) - actualDiff) / actualDiff) > tol)
+            {
+                printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldDiff), getValue(&diff));
+                break;
+            }
+        }
+        {
+            if(fabsl((getValue(&prod) - actualProd) / actualProd) > tol)
+            {
+                printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldProd), getValue(&prod));
                 break;
             }
         }
