@@ -117,57 +117,52 @@ void bishl(BigInt* op, int bits)
 
 void bishr(BigInt* op, int bits)
 {
-    /*
-    if(bits >= 63 * op->size)
-    {
-        memset(op->val, 0, op->size * sizeof(u64));
-        return;
-    }
     //note: the highest bit of each word is not used
-    const int wordBits = 63;
+    const int words = op->size;
+    const int wordBits = 64;
     int wordShift = bits / wordBits;
     int bitShift = bits % wordBits;
     //first, apply word shift
-    for(int i = op->size - wordShift - 1; i >= 0; i--)
+    for(int i = 0; i < words - wordShift; i++)
         op->val[i + wordShift] = op->val[i];
     for(int i = 0; i < wordShift; i++)
         op->val[i] = 0;
-    if(bitShift == 0)
+    if(bitShift == 0 || wordShift >= op->size)
         return;
-    //determine the bit mask for the bits that are copied up into the next word
-    int hishift = wordBits - bits;
-    u64 mask = ((1ULL << bits) - 1);
-    //do the lowest word manually
-    u64 moved;
-    for(int i = op->size - 1; i >= 0; i--)
+    //shr each word by bitShift
+    u64 grabMask = ((1ULL << bitShift) - 1);
+    u64 transfer = 0;
+    for(int i = 0; i < words; i++)
     {
-        op->val[i] >>= bits;
-        if(i > 0)
-        {
-            moved = op->val[i - 1] & mask;
-            op->val[i] |= (moved << hishift);
-        }
+        u64 temp = op->val[i] & grabMask;
+        op->val[i] >>= bitShift;
+        op->val[i] |= transfer;
+        transfer = temp << (64 - bits);
     }
-    */
 }
 
 void bishlOne(BigInt* op)
 {
-    for(int i = 0; i < op->size - 1; i++)
+    u64 transfer = 0;
+    for(int i = op->size - 1; i >= 0; i--)
     {
+        u64 newTransfer = (op->val[i] & (1ULL << 63)) >> 63;
         op->val[i] <<= 1;
-        op->val[i] |= (op->val[i + 1] & (1ULL << 62)) >> 62;
+        op->val[i] |= transfer;
+        transfer = newTransfer;
     }
 }
 
 void bishrOne(BigInt* op)
 {
-    for(int i = op->size - 1; i > 0; i--)
+    u64 transfer = 0;
+    for(int i = 0; i < op->size; i++)
     {
+        u64 newTransfer = (op->val[i] & 1) << 63;
         op->val[i] >>= 1;
-        op->val[i] |= (op->val[i - 1] & 1ULL) << 62;
+        op->val[i] |= transfer;
+        transfer = newTransfer;
     }
-    op->val[0] >>= 1;
 }
 
 void biTwoComplement(BigInt* op)
@@ -221,9 +216,9 @@ void bimulC1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)
 
 void profiler()
 {
-    int prec = 2;
-    u64 trials = 10;
-    u64 operations = 3000000;
+    int prec = 10;
+    u64 trials = 2;
+    u64 operations = 300000;
     BigInt op1;
     op1.size = prec;
     BigInt op2 = op1;
@@ -252,7 +247,7 @@ void profiler()
             } \
         } \
         double perSec = (double) trials * (double) operations / ((double) clock() - start) * CLOCKS_PER_SEC; \
-        printf("Function %s ran %e times per sec.\n", #func, perSec); \
+        printf("%10s ran %e times per sec.\n", #func, perSec); \
     }
 #define profileUnary(func) \
     { \
@@ -269,11 +264,13 @@ void profiler()
             } \
         } \
         double perSec = (double) trials * (double) operations / ((double) clock() - start) * CLOCKS_PER_SEC; \
-        printf("Function %s ran %e times per sec.\n", #func, perSec); \
+        printf("%10s ran %e times per sec.\n", #func, perSec); \
     }
     profile(bimul);
     profile(bimulC);
     profile(biadd);
+    profile(biaddC);
     profile(bisub);
+    profile(bisubC);
     profileUnary(biinc);
 }

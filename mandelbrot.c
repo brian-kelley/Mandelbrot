@@ -541,24 +541,16 @@ int getPrec(int expo)
 
 int main(int argc, const char** argv)
 {
-    int prec = 1;
-    BigInt b1 = BigIntCtor(prec);
-    BigInt b2 = BigIntCtor(prec);
-    BigInt dst = BigIntCtor(prec);
-    b1.val[0] = 0xFFFFFFFFFFFF;
-    b2.val[0] = 0xAAAAAAAAA;
-    bisub(&dst, &b1, &b2);
-    printf("bi1: ");
-    biPrint(&b1);
-    printf("bi2: ");
-    biPrint(&b2);
-    printf("dst: ");
-    biPrint(&dst);
+    BigInt b = BigIntCtor(2);
+    b.val[0] = 0xFFFFFFFF;
+    b.val[1] = 0xAAAAAAAAAA;
+    for(int i = 0; i < 20; i++)
+    {
+        biPrint(&b);
+        bishrOne(&b);
+    }
     return 0;
 
-    profiler();
-    return 0;
-    
     //Process cli arguments first
     //Set all the arguments to default first
     const char* targetCache = NULL;
