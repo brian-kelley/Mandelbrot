@@ -173,7 +173,7 @@ mov r8, [rdi]
 mov r9, [rsi]
 mov r10, [rdx]
 mov ecx, [rdi + 8]
-neg eax
+neg eax                      ; sets carry (don't care about eax)
 .addloop:
 lea rdi, [r8 + 8 * rcx - 8]
 lea rsi, [r9 + 8 * rcx - 8]
@@ -197,7 +197,6 @@ mov rsi, [rdi]              ; rsi points to first word
 add rsi, rcx                ; rsi poins to last word
 add qword [rsi], 1          ; increment lowest word
 jc .loop
-.done:
 ret
 .loop:
 sub rsi, 8
@@ -208,3 +207,4 @@ ret
 .check:
 jc .loop
 ret
+

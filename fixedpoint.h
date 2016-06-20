@@ -27,7 +27,8 @@ typedef struct
 
 #define INCR_PREC(f) \
     f.value.size++; \
-    f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64));
+    f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64)); \
+    f.value.val[f.value.size - 1] = 0;
 
 #define CHANGE_PREC(f, newPrec) \
 { \

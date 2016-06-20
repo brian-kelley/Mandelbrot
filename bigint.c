@@ -191,18 +191,11 @@ void biPrintBin(BigInt* op)
 
 bool biNthBit(BigInt* op, int n)
 {
-    if(n < 0 || n >= op->size * 64)
+    int words = n / 64;
+    int bits = n % 64;
+    if(words < 0 || words >= op->size)
         return false;
-    int word = n / 64;
-    int bit = n % 64;
-    return op->val[op->size - 1 - word] & (1ULL << bit) ? true : false;
-}
-
-void bimulC1(BigInt* restrict dst, BigInt* lhs, BigInt* rhs)
-{
-    u128 prod = (u128) lhs->val[0] * rhs->val[0];
-    dst->val[1] = prod;
-    dst->val[0] = prod >> 64;
+    return (op->val[words] & (1ULL << (63 - bits))) ? true : false;
 }
 
 void profiler()

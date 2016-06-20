@@ -62,6 +62,7 @@ int getConvRate(FP* real, FP* imag)
 {
     //printf("Iterating (%Lf, %Lf)\n", getValue(real), getValue(imag));
     //real, imag make up "c" in z = z^2 + c
+    assert(real->value.size == prec && imag->value.size == prec);
     MAKE_STACK_FP(four);
     loadValue(&four, 4);
     MAKE_STACK_FP(zr);
@@ -85,13 +86,16 @@ int getConvRate(FP* real, FP* imag)
         fpadd3(&zi, &zri, imag);
         fpadd3(&mag, &zrsquare, &zisquare);
         if(mag.value.val[0] >= four.value.val[0])
+        {
             break;
+        }
     }
     return iter == maxiter ? -1 : iter;
 }
 
 int getConvRateCapped(FP* real, FP* imag, int localMaxIter)
 {
+    assert(real->value.size == prec && imag->value.size == prec);
     //real, imag make up "c" in z = z^2 + c
     MAKE_STACK_FP(four);
     loadValue(&four, 4);
@@ -129,6 +133,8 @@ void* workerFunc(void* buffer)
     MAKE_STACK_FP(yiter);
     MAKE_STACK_FP(pstrideLocal);
     fpcopy(&pstrideLocal, &buf->pstride);
+    assert(buf->pstride.value.size == prec);
+    assert(x.value.size == prec);
     while(true)
     {
         //Fetch and increment the current work column
@@ -160,6 +166,13 @@ void* workerFunc(void* buffer)
         {
             if(filecount % 8 == 0 || buf->iters[xpix + ypix * buf->w] == 0)
             {
+                /*
+                puts("Getting conv rate @:");
+                printf("x: ");
+                biPrint(&x.value);
+                printf("y: ");
+                biPrint(&yiter.value);
+                */
                 int convRate = getConvRate(&x, &yiter);
                 buf->iters[xpix + ypix * buf->w] = convRate;
             }
@@ -223,10 +236,9 @@ void* workerFuncCapped(void* buffers)
     return NULL;
 }
 
-
-
 void drawBuf(Buffer* buf, bool doRecycle)
 {
+    printf("Drawing buf with pstride = %Le\n", getValue(&buf->pstride));
     if(doRecycle)
         recycle(buf);
     else
@@ -345,7 +357,7 @@ void recycle(Buffer* buf)
     { \
         int oldx = buf->w / 4 + i / 2; \
         int oldy = buf->h / 4 + j / 2; \
-        if(i % 2 == 0 && j % 2 == 0) \
+        if(i % 2 == 0 && j % 2 == 0 && buf->iters[oldx + oldy * buf->w] != -1) \
             buf->iters[i + j * buf->w] = buf->iters[oldx + oldy * buf->w]; \
         else \
             buf->iters[i + j * buf->w] = 0; \
@@ -368,7 +380,7 @@ void recycle(Buffer* buf)
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 50 * zoomExpo;
+    const int normalIncrease = 70 * zoomExpo;
     maxiter += normalIncrease;
 }
 
@@ -377,42 +389,55 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     FILE* cache = NULL;
     if(cacheFile && useCache)
     {
-        cache = fopen(cacheFile, "r");
+        cache = fopen(cacheFile, "rb");
         targetX = fpRead(cache);
         targetY = fpRead(cache);
         fclose(cache);
         return;
     }
-    long double initViewport = 4.0;
-    targetX = FPCtorValue(1, 0);
-    targetY = FPCtorValue(1, 0);
+    long double initViewport = 4;
     //make a temporary iteration count buffer
     Buffer buf; 
-    int gpx = 16;                       //size, in pixels, of GIL iteration buffer (must be PoT)
+    int gpx = 8;                       //size, in pixels, of GIL iteration buffer (must be PoT)
     prec = 1;
+    targetX = FPCtorValue(prec, 0);
+    targetY = FPCtorValue(prec, 0);
     buf.iters = (int*) malloc(gpx * gpx * sizeof(int));
     buf.colors = NULL;
     buf.pstride = FPCtorValue(prec, initViewport / gpx);
     buf.w = gpx;
     buf.h = gpx;
-    int zoomExpo = 3;               //log_2 of zoom factor 
+    int zoomExpo = 2;               //log_2 of zoom factor 
     FP fbestPX = FPCtor(1);
     FP fbestPY = FPCtor(1);
     maxiter = 300;
     int count = 0;
-    while(getApproxExpo(&buf.pstride) >= minExpo)
+    while(true)
     {
-        printf("Pixel stride = %Le, iter cap is %i\n", getValue(&buf.pstride), maxiter);
-        //drawBuf() only depends on pixel stride, which is already set 
-        drawBuf(&buf, count % 7 != 0);
-        puts("**********The buffer:**********");
-        for(int i = 0; i < gpx * gpx; i++)
+        if(getApproxExpo(&buf.pstride) <= minExpo)
         {
-            printf("%5i ", buf.iters[i]);
-            if(i % gpx == gpx - 1)
-                puts("");
+            if(verbose)
+            {
+                printf("Stopping because pstride <= 2^%i\n", getApproxExpo(&buf.pstride));
+            }
+            break;
         }
-        puts("*******************************");
+        printf("Pixel stride = %Le, iter cap is %i\n", getValue(&buf.pstride), maxiter);
+        printf("Pstride as int: ");
+        biPrint(&buf.pstride.value);
+        drawBuf(&buf, count % 7 != 0);
+        reduceIters(buf.iters, 2, gpx, gpx);
+        if(verbose)
+        {
+            puts("**********The buffer:**********");
+            for(int i = 0; i < gpx * gpx; i++)
+            {
+                printf("%5i ", buf.iters[i]);
+                if(i % gpx == gpx - 1)
+                    puts("");
+            }
+            puts("*******************************");
+        }
         int bestPX;
         int bestPY;
         int bestIters = 0;
@@ -431,6 +456,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
                 }
             }
         }
+        printf("Zooming toward pixel (%i, %i)\n", bestPX, bestPY);
         itersum /= (gpx * gpx); //compute average iter count
         recomputeMaxIter(zoomExpo);
         if(bestIters == 0)
@@ -482,9 +508,16 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             INCR_PREC(targetX);
             INCR_PREC(targetY);
             prec++;
-            printf("*** Increasing precision to level %i ***\n", prec);
+            if(verbose)
+            {
+                printf("*** Increased precision to level %i ***\n", prec);
+            }
         }
         //zoom in according to the PoT zoom factor defined above
+        printf("target x: ");
+        biPrint(&targetX.value);
+        printf("target y: ");
+        biPrint(&targetY.value);
         fpshr(buf.pstride, zoomExpo);
     }
     free(buf.iters); 
@@ -492,7 +525,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     puts("Saving target position.");
     if(cacheFile)
     {
-        cache = fopen(cacheFile, "w");
+        cache = fopen(cacheFile, "wb");
         //write targetX, targetY to the cache file
         fpWrite(&targetX, cache);
         fpWrite(&targetY, cache);
@@ -507,17 +540,14 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 bool upgradePrec(FP* pstride)
 {
     //is a bit in the lowest half of pstride high?
-    //Assume that pstride must always maintain 10 bits of significant bits
-    const int minSigBits = 20;
     int numBits = pstride->value.size * 64;
+    //when the most significant 1 bit is this far from end, return true
+    const int minSigBits = 32;
     //Scan for the first nonzero bit
-    printf("pstride as int: ");
-    biPrint(&pstride->value);
     for(int i = 0; i < numBits; i++)
     {
         if(biNthBit(&pstride->value, i))
         {
-            printf("Found first 1 bit at index %i\n", i);
             if(numBits - i <= minSigBits)
             {
                 return true;
@@ -528,14 +558,14 @@ bool upgradePrec(FP* pstride)
             }
         }
     }
-    assert("pstride is zero!" == 0);
+    assert(!"pstride is zero!");
     return false;
 }
 
 int main(int argc, const char** argv)
 {
-    //Process cli arguments first
-    //Set all the arguments to default first
+    //Process cli arguments
+    //set all the arguments to default first
     const char* targetCache = NULL;
     bool useTargetCache = false;
     numThreads = 4;
@@ -586,6 +616,7 @@ int main(int argc, const char** argv)
         printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+    return 0;
     prec = 1;
     Buffer image;
     image.iters = (int*) malloc(imageWidth * imageHeight * sizeof(int));
@@ -594,7 +625,7 @@ int main(int argc, const char** argv)
     image.h = imageHeight;
     image.pstride = FPCtorValue(prec, 4.0 / imageWidth);
     Buffer coarse;
-    coarse.w = 400;
+    coarse.w = 200;
     coarse.h = coarse.w * imageHeight / imageWidth;
     coarse.iters = (int*) malloc(coarse.w * coarse.h * sizeof(int));
     coarse.colors = NULL;
@@ -609,8 +640,12 @@ int main(int argc, const char** argv)
     {
         time_t start = time(NULL);
         //create coarse image with full iteration count
-        //fastDrawBuf(&image, &coarse, filecount % 3 != 0);
-        fastDrawBuf(&image, &coarse, false);
+        //fastDrawBuf(&image, &coarse, false);
+/* TESTING */
+        drawBuf(&image, false);
+        for(int i = 0; i < image.w * image.h; i++)
+            image.colors[i] = getColor(image.iters[i]);
+
         writeImage(&image);
         fpshrOne(image.pstride);
         fpshrOne(coarse.pstride);

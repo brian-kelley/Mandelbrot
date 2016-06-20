@@ -134,6 +134,10 @@ void loadValue(FP* fp, long double val)
 {
     val /= (1 << (maxExpo - 1));
     fp->value.val[0] = fabsl(val) * (1ULL << 63);
+    for(int i = 1; i < fp->value.size; i++)
+    {
+        fp->value.val[i] = 0;
+    }
     fp->sign = val < 0;
 }
 
@@ -177,22 +181,15 @@ void fpcopy(FP* lhs, FP* rhs)
 int getApproxExpo(FP* lhs)
 {
     int expo = maxExpo;   //assume the maximum value
-    int i;
-    while(lhs->value.val[i] == 0)
+    for(int i = 0; i < lhs->value.size * 64; i++)
     {
-        expo -= 64;
-        i++;
-    }
-    if(i < lhs->value.size)
-    {
-        u64 word = lhs->value.val[i];
-        while((word & (1ULL << 63)) == 0)
+        if(biNthBit(&lhs->value, i))
         {
-            expo--;
-            word <<= 1;
+            return expo - i;
         }
     }
-    return expo;
+    //number is 0
+    return INT_MIN;     
 }
 
 void fuzzTest()
