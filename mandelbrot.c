@@ -221,7 +221,6 @@ void fillRect(Rect r)
     }
     if(allSame)
     {
-        int saved = 0;
         //flood fill the rectangle with iterCount
         for(int i = 1; i < r.w - 1; i++)
         {
@@ -237,7 +236,6 @@ void fillRect(Rect r)
     //make sure they share all possible edges, but otherwise don't overlap
     //cut along shorter dimension
     //cut at the first different pixel along boundary
-/*
     if(r.w > r.h)
     {
         Rect first = {r.x, r.y, r.w / 2, r.h};
@@ -253,59 +251,6 @@ void fillRect(Rect r)
         Rect second = {r.x, r.y + r.h / 2, r.w, r.h - r.h / 2};
         fillRect(second);
         return;
-    }
-*/
-    Rect first = {-10000, -10000, -10000, -10000};
-    Rect second = first;
-    first.x = r.x;
-    first.y = r.y;
-    if(r.w > r.h)
-    {
-        first.h = r.h;
-        second.h = r.h;
-        second.y = r.y;
-        //split rectangle at x = k
-        //walk along top/bottom edges until a different value is found
-        int topVal = iters[upperLeft];
-        int botVal = iters[lowerLeft];
-        for(int i = 2; i < r.w - 2; i++)
-        {
-            if(iters[upperLeft + i] != topVal || iters[lowerLeft + i] != botVal)
-            {
-                //split along x = r.x + i
-                first.w = i - 1;
-                second.x = r.x + i - 1;
-                second.w = r.w - i + 1;
-                //printf("First coords: (%i, %i) to (%i, %i); second: (%i, %i) to (%i, %i)\n", first.x, first.y, first.x + first.w, first.y + first.h, second.x, second.y, second.x + second.w, second.y + second.h);
-                fillRect(first);
-                fillRect(second);
-                return;
-            }
-        }
-    }
-    else
-    {
-        //split at y = k
-        first.w = r.w;
-        second.w = r.w;
-        second.x = r.x;
-        //walk along top/bottom edges until first difference is found, then split rectangles there
-        int leftVal = iters[upperLeft];
-        int rightVal = iters[upperRight];
-        for(int i = 2; i < r.h - 2; i++)
-        {
-            if(iters[upperLeft + i * winw] != leftVal || iters[upperRight + i * winw] != rightVal)
-            {
-                //split along y = r.y + i
-                first.h = i - 1;
-                second.y = r.y + i - 1;
-                second.h = r.h - i + 1;
-                //printf("Subdividing horizontally, new heights: %i, %i\n", first.h, second.h);
-                fillRect(first);
-                fillRect(second);
-                return;
-            }
-        }
     }
 }
 
@@ -368,7 +313,7 @@ void drawBuf()
 
 void recomputeMaxIter(int zoomExpo)
 {
-    const int normalIncrease = 70 * zoomExpo;
+    const int normalIncrease = 400 * zoomExpo;
     maxiter += normalIncrease;
 }
 
@@ -419,6 +364,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
         printf("Pstride as int: ");
         biPrint(&pstride.value);
+        for(int i = 0; i < gpx * gpx; i++)
+            iters[i] = NOT_COMPUTED;
         iteratePointQueue(queue, gpx * gpx);
         if(verbose)
         {
@@ -431,8 +378,8 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
             }
             puts("*******************************");
         }
-        int bestPX;
-        int bestPY;
+        int bestPX = 0;
+        int bestPY = 0;
         int bestIters = 0;
         u64 itersum = 0;
         //get point with maximum iteration count (that didn't converge)
@@ -631,7 +578,6 @@ int main(int argc, const char** argv)
         int timeDiff = time(NULL) - start;
         if(upgradePrec(&pstride))
         {
-            return 0;
             INCR_PREC(pstride);
             prec++;
             if(verbose)
