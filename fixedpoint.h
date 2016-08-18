@@ -3,9 +3,9 @@
 #ifndef FIXEDPOINT_H
 #define FIXEDPOINT_H
 
-/* Fixed-point number with a range (-4, 4) */
+/* Fixed-point number with a range (-4096, 4096) */
 /* Can configure the range with this value: */
-#define maxExpo 5
+#define maxExpo 12
 
 typedef struct
 {
