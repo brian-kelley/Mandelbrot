@@ -1,2 +1,2 @@
 #!/bin/bash
-nice -n 1 build/Mandelbrot --size 640x480 --targetcache target.bin --usetargetcache -n 4 --depth -300 --verbose
+build/Mandelbrot -n 4 --size 1280x720 --usetargetcache --targetcache target.bin --depth -300 --verbose --seed 42

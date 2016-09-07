@@ -6,6 +6,10 @@
 /* Fixed-point number with a range (-4096, 4096) */
 /* Can configure the range with this value: */
 #define maxExpo 12
+#define N_MULTIPLIES 5  //max prec of specialized multiplies, before using general
+
+typedef void (*Multiply)(BigInt* res, BigInt* lhs, BigInt* rhs);
+extern int fpPrec;
 
 typedef struct
 {
@@ -38,6 +42,8 @@ typedef struct
     for(int _i = oldPrec; _i < newPrec; _i++) \
         f.value.val[_i] = 0; \
 }
+
+void globalUpdatePrec(int n);
 
 FP FPCtor(int prec);
 FP FPCtorValue(int prec, long double val);

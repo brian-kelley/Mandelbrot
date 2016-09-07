@@ -1,5 +1,9 @@
 #include "fixedpoint.h"
 
+void globalUpdatePrec(int n)
+{
+}
+
 FP FPCtor(int prec)
 {
     FP rv;
@@ -132,42 +136,59 @@ int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > 
 
 void loadValue(FP* fp, long double val)
 {
-    val /= (1 << (maxExpo - 1));
-    fp->value.val[0] = fabsl(val) * (1ULL << 63);
-    for(int i = 1; i < fp->value.size; i++)
-    {
+    for(int i = 0; i < fp->value.size; i++)
         fp->value.val[i] = 0;
+    if(val < 0)
+    {
+        fp->sign = true;
+        val *= -1;
     }
-    fp->sign = val < 0;
+    else
+        fp->sign = false;
+    int expo;
+    long double mant = frexpl(val, &expo);
+    mant *= (1ULL << 32);
+    mant *= (1ULL << 32);
+    fp->value.val[0] = (u64) mant;
+    fpshr(*fp, maxExpo - expo);
 }
 
 long double getValue(FP* fp)
 {
-    if(fp->value.val[0])
+    int firstWord = -1;
+    for(int i = 0; i < fp->value.size; i++)
     {
-        long double val = fp->value.val[0] / (long double) (1ULL << 63);
-        val *= fp->sign ? -1 : 1;
-        val *= (1 << (maxExpo - 1));
-        return val;
-    }
-    else
-    {
-        int wordShift;
-        for(wordShift = 0; wordShift < fp->value.size; wordShift++)
+        if(fp->value.val[i])
         {
-            if(fp->value.val[wordShift])
-                break;
+            firstWord = i;
+            break;
         }
-        if(wordShift == fp->value.size)
-            return 0;
-        long double val = fp->value.val[wordShift] / (long double) (1ULL << 63);
-        val *= fp->sign ? -1 : 1;
-        int expo;
-        long double mant = frexpl(val, &expo);
-        expo += (maxExpo - 1);
-        expo -= 64 * wordShift;
-        return ldexpl(mant, expo);
     }
+    if(firstWord == -1)
+        return 0;
+    int expo = maxExpo - 64 * firstWord;
+    u64 mask = (1ULL << 63);
+    //bitShift will be the number of leading zeroes in firstWord
+    int bitShift = 0;
+    for(;; bitShift++)
+    { 
+        if(fp->value.val[firstWord] & mask)
+            break;
+        mask >>= 1;
+    }
+    expo -= bitShift;
+    //use firstWord and bitShift to get full 64 bit precise mantissa
+    u64 highWordBits = (fp->value.val[firstWord] & ((1ULL << (64 - bitShift)) - 1)) << bitShift;
+    u64 lowWordBits;
+    if(firstWord == fp->value.size - 1)
+        lowWordBits = 0;
+    else
+        lowWordBits = (fp->value.val[firstWord + 1] & (((1ULL << bitShift) - 1) << (64 - bitShift))) >> (64 - bitShift);
+    long double mant = highWordBits | lowWordBits;
+    if(fp->sign)
+        mant *= -1;
+    //note: mant is too big by factor of 2^64
+    return ldexpl(mant, expo - 64);
 }
 
 void fpcopy(FP* lhs, FP* rhs)
@@ -178,18 +199,12 @@ void fpcopy(FP* lhs, FP* rhs)
     lhs->sign = rhs->sign;
 }
 
-int getApproxExpo(FP* lhs)
+int getApproxExpo(FP* fp)
 {
-    int expo = maxExpo;   //assume the maximum value
-    for(int i = 0; i < lhs->value.size * 64; i++)
-    {
-        if(biNthBit(&lhs->value, i))
-        {
-            return expo - i;
-        }
-    }
-    //number is 0
-    return INT_MIN;     
+  long double val = getValue(fp);
+  int expo;
+  frexpl(val, &expo);
+  return expo;
 }
 
 void fuzzTest()
