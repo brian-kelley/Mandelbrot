@@ -87,8 +87,6 @@ static Point* pushFillNeighbors(Point proc, int replaceVal, Point* stack)
 {
   //fill the point in iters
   int i = proc.x + proc.y * winw;
-  //iters[i] = val;
-  iters[i] = BLANK;
   //push neighbors on stack that need to be processed
   if(proc.y > 0 && iters[i - winw] == replaceVal)
   {
@@ -115,13 +113,18 @@ static Point* pushFillNeighbors(Point proc, int replaceVal, Point* stack)
 
 void floodFill(Point p, int val, Point* stack)
 {
+  printf("Flood fill starting at (%i, %i)\n", p.x, p.y);
   //set up stack (remember base)
   int replaceVal = NOT_COMPUTED;
   if(iters[p.x + p.y * winw] != val)
     replaceVal = iters[p.x + p.y * winw];
   Point* base = stack;
-  //push the first set of points
-  stack = pushFillNeighbors(p, replaceVal, stack);
+  //push the first point(s) to be processed
+  if(getPixel(p) == NOT_COMPUTED)
+    *(stack++) = p;
+  else
+    stack = pushFillNeighbors(p, replaceVal, stack);
+  printf("starting stack size: %td\n", stack - base);
   //loop will terminate when all points have been filled
   while(stack != base)
   {
@@ -129,9 +132,8 @@ void floodFill(Point p, int val, Point* stack)
     Point proc = *(--stack);
     //fill the point in iters
     int i = proc.x + proc.y * winw;
-    //iters[i] = val;
-    if(iters[i] != val)
-      iters[i] = BLANK;
+    //set the pixel
+    iters[i] = val;
     outlineHits[i] = true;
     //push neighbors on stack that need to be processed
     stack = pushFillNeighbors(proc, replaceVal, stack);
@@ -229,41 +231,6 @@ void fillAll()
   }
   //floodFill((Point) {1000, winh / 2}, 50, pathbuf);
   free(pathbuf);
-  return;
-
-  /*
-  Point origin = {0, 0};
-  traceOutline(origin, getPixel(origin));
-  //sweep sequentially through iters
-  //find the first point that has different value than point left of it, which hasn't been hit by outline
-  for(int y = 0; y < winh; y++)
-  {
-    for(int x = 0; x < winw - 1; x++)
-    {
-      int i = x + y * winw;
-      if(outlineHits[i] && iters[i + 1] != NOT_COMPUTED && !outlineHits[i + 1])
-      {
-        Point p = {x + 1, y};
-        printf("Filling second shape at (%i, %i)\n", x + 1, y);
-        traceOutline(p, iters[i + 1]);
-        return;
-      }
-    }
-  }
-
-  //first need to compute all pixels on screen boundary 
-  for(int i = 0; i < winw; i++)
-    getPixelConvRate(i, 0);
-  for(int i = 0; i < winw; i++)
-    getPixelConvRate(i, winh - 1);
-  for(int i = 1; i < winh - 1; i++)
-    getPixelConvRate(0, i);
-  for(int i = 1; i < winh - 1; i++)
-    getPixelConvRate(winw - 1, i);
-  */
-  //fill all boundaries in x+ then y+ directions
-  //finish frame by filling solid fields (very fast, no math)
-  //fillOutlines();
 }
 
 static Point movePoint(Point p, int dir)
@@ -335,7 +302,6 @@ static int getExitDir(Point p, int prevDir, int val)
 void traceOutline(Point start, int val, Point* pbuf)
 {
   Point* lastPoint = pbuf;
-  //printf("(%i, %i)\n", start.x, start.y);
   //set initial direction
   int dir = UP;
   Point p = start;
@@ -346,7 +312,6 @@ void traceOutline(Point start, int val, Point* pbuf)
   int maxy = 0;
   while(true)
   {
-    //printf("  at (%i,%i)\n", p.x, p.y);
     //get direction for moving to next point
     //if point is same as start, done with boundary
     dir = getExitDir(p, dir, val);
@@ -381,11 +346,13 @@ void traceOutline(Point start, int val, Point* pbuf)
     while(true)
     {
       Point p = *(--lastPoint);
-      if(inBounds(p) && iters[p.x + p.y * winw] == val)
+      Point down = {p.x, p.y + 1};
+      Point right = {p.x + 1, p.y};
+      if(getPixelNoCompute(p) == val && getPixelNoCompute(right) == val && getPixelNoCompute(down) == val)
       {
-        Point possibleFill = {p.x + 1, p.y + 1};
-        if(inBounds(possibleFill) && iters[possibleFill.x + possibleFill.y * winw] == NOT_COMPUTED)
-          floodFill(p, val, stack);
+        Point fillStart = {p.x + 1, p.y + 1};
+        if(getPixelNoCompute(fillStart) == NOT_COMPUTED)
+          floodFill(fillStart, val, stack);
       }
       if(lastPoint == pbuf)
         break;
