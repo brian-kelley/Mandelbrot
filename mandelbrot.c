@@ -17,7 +17,7 @@ int prec;
 int deepestExpo;
 bool verbose;
 int zoomRate;
-int savings;
+int pixelsComputed;
 
 #define NUM_COLORS 360
 #define NOT_COMPUTED -2
@@ -45,7 +45,20 @@ void initColorTable()
 {
   for(int i = 0; i < NUM_COLORS; i++)
   {
-    colortable[i] = mrand | 0xFF;
+    unsigned color = 0xFF;
+    unsigned r = 0;
+    unsigned g = 0;
+    unsigned b = 0;
+    while(!r)
+      r = (mrand & 0xF) << 4;
+    while(!g)
+      g = (mrand & 0xF) << 4;
+    while(!b)
+      b = (mrand & 0xF) << 4;
+    color |= (r << 24);
+    color |= (g << 16);
+    color |= (b << 8);
+    colortable[i] = color;
   }
   /*
     colortable = (unsigned*) malloc(NUM_COLORS * sizeof(unsigned));
@@ -70,12 +83,45 @@ void initColorTable()
     */
 }
 
+static Point* pushFillNeighbors(Point proc, int replaceVal, Point* stack)
+{
+  //fill the point in iters
+  int i = proc.x + proc.y * winw;
+  //iters[i] = val;
+  iters[i] = BLANK;
+  //push neighbors on stack that need to be processed
+  if(proc.y > 0 && iters[i - winw] == replaceVal)
+  {
+    Point newPoint = {proc.x, proc.y - 1};
+    *(stack++) = newPoint;
+  }
+  if(proc.x > 0 && iters[i - 1] == replaceVal)
+  {
+    Point newPoint = {proc.x - 1, proc.y};
+    *(stack++) = newPoint;
+  }
+  if(proc.y < winh - 1 && iters[i + winw] == replaceVal)
+  {
+    Point newPoint = {proc.x, proc.y + 1};
+    *(stack++) = newPoint;
+  }
+  if(proc.x < winw - 1 && iters[i + 1] == replaceVal)
+  {
+    Point newPoint = {proc.x + 1, proc.y};
+    *(stack++) = newPoint;
+  }
+  return stack;
+}
+
 void floodFill(Point p, int val, Point* stack)
 {
   //set up stack (remember base)
+  int replaceVal = NOT_COMPUTED;
+  if(iters[p.x + p.y * winw] != val)
+    replaceVal = iters[p.x + p.y * winw];
   Point* base = stack;
-  //push the first point
-  *(stack++) = p;
+  //push the first set of points
+  stack = pushFillNeighbors(p, replaceVal, stack);
   //loop will terminate when all points have been filled
   while(stack != base)
   {
@@ -83,42 +129,25 @@ void floodFill(Point p, int val, Point* stack)
     Point proc = *(--stack);
     //fill the point in iters
     int i = proc.x + proc.y * winw;
-    iters[i] = val;
+    //iters[i] = val;
+    if(iters[i] != val)
+      iters[i] = BLANK;
     outlineHits[i] = true;
     //push neighbors on stack that need to be processed
-    if(proc.y > 0 && iters[i - winw] == NOT_COMPUTED)
-    {
-      Point newPoint = {proc.x, proc.y - 1};
-      *(stack++) = newPoint;
-    }
-    if(proc.x > 0 && iters[i - 1] == NOT_COMPUTED)
-    {
-      Point newPoint = {proc.x - 1, proc.y};
-      *(stack++) = newPoint;
-    }
-    if(proc.y < winh - 1 && iters[i + winw] == NOT_COMPUTED)
-    {
-      Point newPoint = {proc.x, proc.y + 1};
-      *(stack++) = newPoint;
-    }
-    if(proc.x < winw - 1 && iters[i + 1] == NOT_COMPUTED)
-    {
-      Point newPoint = {proc.x + 1, proc.y};
-      *(stack++) = newPoint;
-    }
+    stack = pushFillNeighbors(proc, replaceVal, stack);
   }
 }
 
 Uint32 getColor(int num)
 {
-    if(num == NOT_COMPUTED)
-        return 0x888888FF;
-    if(num == -1)
-        return 0x000000FF;                  //in the mandelbrot set = opaque black
-    if(num == BLANK)
-        return 0xFFFFFFFF;
-    //make a steeper gradient for the first few iterations (better image 0)
-    return colortable[(num * 3) % NUM_COLORS];
+  if(num == NOT_COMPUTED)
+    return 0x888888FF;
+  if(num == -1)
+    return 0x000000FF;                  //in the mandelbrot set = opaque black
+  if(num == BLANK)
+    return 0xFFFFFFFF;
+  //make a steeper gradient for the first few iterations (better image 0)
+  return colortable[(num * 3) % NUM_COLORS];
 }
 
 bool inBounds(Point p)
@@ -131,6 +160,13 @@ int getPixel(Point p)
   if(!inBounds(p))
     return OUTSIDE_IMAGE;
   return getPixelConvRate(p.x, p.y);
+}
+
+int getPixelNoCompute(Point p)
+{
+  if(!inBounds(p))
+    return OUTSIDE_IMAGE;
+  return iters[p.x + p.y * winw];
 }
 
 static int getPixelState(Point p, int val)
@@ -174,23 +210,25 @@ void fillAll()
   }
   memset(outlineHits, 0, winw * winh);
   Point* pathbuf = malloc(winw * winh * sizeof(Point));
-  while(true)
+  for(int i = 0; i < winw * winh; i++)
   {
-    int i;
-    for(i = 0; i < winw * winh; i++)
+    if(iters[i] == NOT_COMPUTED)
     {
-      if(!outlineHits[i])
-      {
-        Point p = {i % winw, i / winw};
-        int val = getPixel(p);
-        printf("Filling shape starting at (%i, %i), val = %i\n", p.x, p.y, val);
+      Point p = {i % winw, i / winw};
+      int val = getPixel(p);
+      if(getPixelNoCompute((Point) {p.x - 1, p.y}) != NOT_COMPUTED &&
+         getPixelNoCompute((Point) {p.x + 1, p.y}) != NOT_COMPUTED &&
+         getPixelNoCompute((Point) {p.x, p.y - 1}) != NOT_COMPUTED &&
+         getPixelNoCompute((Point) {p.x, p.y + 1}) != NOT_COMPUTED)
+        continue;
+      //if all 4-neighbors have been computed, done
+      int state = getPixelState(p, val);
+      if(state != 0b1111)
         traceOutline(p, val, pathbuf);
-        break;
-      }
     }
-    if(i == winw * winh)
-      break;
   }
+  //floodFill((Point) {1000, winh / 2}, 50, pathbuf);
+  free(pathbuf);
   return;
 
   /*
@@ -297,7 +335,7 @@ static int getExitDir(Point p, int prevDir, int val)
 void traceOutline(Point start, int val, Point* pbuf)
 {
   Point* lastPoint = pbuf;
-  printf("(%i, %i)\n", start.x, start.y);
+  //printf("(%i, %i)\n", start.x, start.y);
   //set initial direction
   int dir = UP;
   Point p = start;
@@ -306,11 +344,11 @@ void traceOutline(Point start, int val, Point* pbuf)
   int maxx = 0;
   int miny = winh;
   int maxy = 0;
-  puts("Tracing outline.");
   while(true)
   {
     //printf("  at (%i,%i)\n", p.x, p.y);
     //get direction for moving to next point
+    //if point is same as start, done with boundary
     dir = getExitDir(p, dir, val);
     if(dir == INVALID)
       return;
@@ -326,7 +364,6 @@ void traceOutline(Point start, int val, Point* pbuf)
     *(lastPoint++) = p;
     //get next point
     Point next = movePoint(p, dir);
-    //if point is same as start, done with boundary
     if(next.x == start.x && next.y == start.y)
       break;
     p = next;
@@ -334,22 +371,27 @@ void traceOutline(Point start, int val, Point* pbuf)
   //if bounding box has w or h 1, done as there is no interior to fill
   int w = maxx - minx;
   int h = maxx - minx;
-  if(maxy - miny <= 1 || maxx - minx <= 1)
-    return;
-  printf("Shape bounding box: (%i, %i) to (%i, %i)\n", minx, miny, maxx, maxy);
-  //get stack space for flood fill
-  //Point* stack = malloc(w * h * sizeof(Point));
-  Point* stack = malloc(winw * winh * sizeof(Point));
-  //go back around shape and flood fill at all points (very low overhead if nothing to be done)
-  while(true)
+  if(maxy - miny > 1 && maxx - minx > 1)
   {
-    Point p = *(--lastPoint);
-    if(iters[p.x + p.y * winw] == val)
-      floodFill(p, val, stack);
-    if(lastPoint == pbuf)
-      break;
+    //printf("Shape bounding box: (%i, %i) to (%i, %i)\n", minx, miny, maxx, maxy);
+    //get stack space for flood fill
+    //Point* stack = malloc(w * h * sizeof(Point));
+    Point* stack = malloc(winw * winh * sizeof(Point));
+    //go back around shape and flood fill at all points (very low overhead if nothing to be done)
+    while(true)
+    {
+      Point p = *(--lastPoint);
+      if(inBounds(p) && iters[p.x + p.y * winw] == val)
+      {
+        Point possibleFill = {p.x + 1, p.y + 1};
+        if(inBounds(possibleFill) && iters[possibleFill.x + possibleFill.y * winw] == NOT_COMPUTED)
+          floodFill(p, val, stack);
+      }
+      if(lastPoint == pbuf)
+        break;
+    }
+    free(stack);
   }
-  free(stack);
 }
 
 int getPixelConvRate(int x, int y)
@@ -383,6 +425,7 @@ int getPixelConvRate(int x, int y)
         rv = getConvRateFP(&r, &i);
     }
     iters[x + y * winw] = rv;
+    pixelsComputed++;
     //printf("getPixel value: %i\n", rv);
     return rv;
 }
@@ -444,7 +487,6 @@ int getConvRateLD(long double real, long double imag)
 
 void fillRect(Rect r)
 {
-    //printf("Filling rect: (%i, %i), %ix%i\n", r.x, r.y, r.w, r.h);
     //get the exact # of pixels to be computed
     int numPx = 0;
     //get indices of corners
@@ -515,7 +557,6 @@ void fillRect(Rect r)
             for(int j = 1; j < r.h - 1; j++)
             {
                 iters[(i + r.x) + (j + r.y) * winw] = iterCount;
-                savings++;
             }
         }
         return;
@@ -625,9 +666,9 @@ void simpleDrawBuf()
 
 void fastDrawBuf()
 {
+    pixelsComputed = 0;
     if(verbose)
         printf("Drawing buf with pstride = %Le\n", getValue(&pstride));
-    savings = 0;
     for(int i = 0; i < winw * winh; i++)
       iters[i] = NOT_COMPUTED;
     fillAll();
@@ -637,7 +678,10 @@ void fastDrawBuf()
             colors[i] = getColor(iters[i]);
     }
     if(verbose)
+    {
+      int savings = winw * winh - pixelsComputed;
         printf("Saved %i of %i pixels (%f%%)\n", savings, winw * winh, 100.0 * savings / (winw * winh));
+    }
 }
 
 void recomputeMaxIter()
@@ -672,7 +716,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     winh = gpx;
     FP fbestPX = FPCtor(1);
     FP fbestPY = FPCtor(1);
-    maxiter = 300;
+    maxiter = 10;
     while(true)
     {
         if(getApproxExpo(&pstride) <= minExpo)
@@ -851,6 +895,7 @@ int main(int argc, const char** argv)
     //set all the arguments to default first
     const char* targetCache = NULL;
     bool useTargetCache = false;
+    //numThreads = 4;
     numThreads = 4;
     const int defaultWidth = 640;
     const int defaultHeight = 480;
@@ -915,8 +960,7 @@ int main(int argc, const char** argv)
     winh = imageHeight;
     pstride = FPCtorValue(prec, 4.0 / imageWidth);
     printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-    maxiter = 10;
-    //maxiter = 10000;
+    maxiter = 100;
     colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
     initColorTable();
     filecount = 0;
@@ -924,9 +968,11 @@ int main(int argc, const char** argv)
     while(getApproxExpo(&pstride) >= deepestExpo)
     {
         time_t start = time(NULL);
+        clock_t cstart = clock();
         fastDrawBuf();
         //simpleDrawBuf();
         writeImage();
+        printf("*** Time elapsed: %f ***\n", ((double) (clock() - cstart)) / CLOCKS_PER_SEC);
         return 0;
         fpshrOne(pstride);
         recomputeMaxIter();

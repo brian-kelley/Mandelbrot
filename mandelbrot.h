@@ -75,6 +75,8 @@ void iteratePointQueue(Point* queue, int num);   //iterate the points in paralle
 void fillAll();
 //Generic get value of pixel
 int getPixel(Point p);
+//Get value of pixel but can return NOT_COMPUTED
+int getPixelNoCompute(Point p);
 //trace boundary of shape; precondition: start point is an upper-left corner
 void traceOutline(Point start, int val, Point* pbuf);
 bool inBounds(Point p);
