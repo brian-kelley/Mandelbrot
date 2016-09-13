@@ -1,9 +1,5 @@
 #include "fixedpoint.h"
 
-void globalUpdatePrec(int n)
-{
-}
-
 FP FPCtor(int prec)
 {
     FP rv;
@@ -155,40 +151,27 @@ void loadValue(FP* fp, long double val)
 
 long double getValue(FP* fp)
 {
-    int firstWord = -1;
-    for(int i = 0; i < fp->value.size; i++)
-    {
-        if(fp->value.val[i])
-        {
-            firstWord = i;
-            break;
-        }
-    }
-    if(firstWord == -1)
-        return 0;
-    int expo = maxExpo - 64 * firstWord;
-    u64 mask = (1ULL << 63);
-    //bitShift will be the number of leading zeroes in firstWord
-    int bitShift = 0;
-    for(;; bitShift++)
-    { 
-        if(fp->value.val[firstWord] & mask)
-            break;
-        mask >>= 1;
-    }
-    expo -= bitShift;
-    //use firstWord and bitShift to get full 64 bit precise mantissa
-    u64 highWordBits = (fp->value.val[firstWord] & ((1ULL << (64 - bitShift)) - 1)) << bitShift;
-    u64 lowWordBits;
-    if(firstWord == fp->value.size - 1)
-        lowWordBits = 0;
-    else
-        lowWordBits = (fp->value.val[firstWord + 1] & (((1ULL << bitShift) - 1) << (64 - bitShift))) >> (64 - bitShift);
-    long double mant = highWordBits | lowWordBits;
-    if(fp->sign)
-        mant *= -1;
-    //note: mant is too big by factor of 2^64
-    return ldexpl(mant, expo - 64);
+  int lz = lzcnt(&fp->value);
+  const int words = fp->value.size;
+  //if no 1 bits in mantissa, can return 0
+  if(lz == 64 * words)
+    return 0.0;
+  u64* buf = alloca(words * sizeof(u64));
+  for(int i = 0; i < words; i++)
+    buf[i] = fp->value.val[i];
+  BigInt tempCopy;
+  tempCopy.val = buf;
+  tempCopy.size = words;
+  bishl(&tempCopy, lz);
+  //now can read off the high word of temp copy as the value
+  long double temp = tempCopy.val[0];
+  int expo;
+  long double mantissa = frexpl(temp, &expo);
+  expo -= (40 + 64 + maxExpo + lz);
+  long double value = ldexpl(temp, expo);
+  if(fp->sign)
+    value *= -1;
+  return value;
 }
 
 void fpcopy(FP* lhs, FP* rhs)

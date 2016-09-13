@@ -5,7 +5,6 @@ int winw;
 int winh;
 int* iters;
 unsigned* colors;
-bool* outlineHits;
 int lastOutline;
 FP targetX;
 FP targetY;
@@ -18,6 +17,7 @@ int deepestExpo;
 bool verbose;
 int zoomRate;
 int pixelsComputed;
+OutlineScratch* oscratch;
 
 #define NUM_COLORS 360
 #define NOT_COMPUTED -2
@@ -45,22 +45,6 @@ void initColorTable()
 {
   for(int i = 0; i < NUM_COLORS; i++)
   {
-    unsigned color = 0xFF;
-    unsigned r = 0;
-    unsigned g = 0;
-    unsigned b = 0;
-    while(!r)
-      r = (mrand & 0xF) << 4;
-    while(!g)
-      g = (mrand & 0xF) << 4;
-    while(!b)
-      b = (mrand & 0xF) << 4;
-    color |= (r << 24);
-    color |= (g << 16);
-    color |= (b << 8);
-    colortable[i] = color;
-  }
-  /*
     colortable = (unsigned*) malloc(NUM_COLORS * sizeof(unsigned));
     int phase = (mrand % 6) * 60;
     for(int i = 0; i < NUM_COLORS; i++)
@@ -80,7 +64,19 @@ void initColorTable()
             b = 255 - slope * abs((t - 240) % 360);
         colortable[i] = (r << 24) | (g << 16) | (b << 8) | 0xFF;
     }
-    */
+  }
+}
+
+void initOutlineScratch()
+{
+  oscratch = malloc(numThreads * sizeof(OutlineScratch));
+  for(int i = 0; i < numThreads; i++)
+  {
+    OutlineScratch os;
+    assert(os.fillStack = malloc(winw * winh * sizeof(Point)));
+    assert(os.outlinePoints = malloc(winw * winh * sizeof(Point)));
+    oscratch[i] = os;
+  }
 }
 
 static Point* pushFillNeighbors(Point proc, int replaceVal, Point* stack)
@@ -113,7 +109,6 @@ static Point* pushFillNeighbors(Point proc, int replaceVal, Point* stack)
 
 void floodFill(Point p, int val, Point* stack)
 {
-  printf("Flood fill starting at (%i, %i)\n", p.x, p.y);
   //set up stack (remember base)
   int replaceVal = NOT_COMPUTED;
   if(iters[p.x + p.y * winw] != val)
@@ -124,7 +119,6 @@ void floodFill(Point p, int val, Point* stack)
     *(stack++) = p;
   else
     stack = pushFillNeighbors(p, replaceVal, stack);
-  printf("starting stack size: %td\n", stack - base);
   //loop will terminate when all points have been filled
   while(stack != base)
   {
@@ -134,7 +128,6 @@ void floodFill(Point p, int val, Point* stack)
     int i = proc.x + proc.y * winw;
     //set the pixel
     iters[i] = val;
-    outlineHits[i] = true;
     //push neighbors on stack that need to be processed
     stack = pushFillNeighbors(proc, replaceVal, stack);
   }
@@ -179,39 +172,27 @@ static int getPixelState(Point p, int val)
   Point p3 = {p.x - 1, p.y};
   if(getPixel(p1) == val)
   {
-    outlineHits[p1.x + p1.y * winw] = true;
     code |= 1;
   }
   if(getPixel(p2) == val)
   {
-    outlineHits[p2.x + p2.y * winw] = true;
     code |= 2;
   }
   if(getPixel(p3) == val)
   {
-    outlineHits[p3.x + p3.y * winw] = true;
     code |= 4;
   }
   if(getPixel(p) == val)
   {
-    outlineHits[p.x + p.y * winw] = true;
     code |= 8;
   }
   return code;
 }
 
-void fillAll()
+void* fillAll(void* osRaw)
 {
-  bool doGold = false;
-  if(doGold)
-  {
-    for(int i = 0; i < winw; i++)
-      for(int j = 0; j < winh; j++)
-        getPixel((Point) {i, j});
-    return;
-  }
-  memset(outlineHits, 0, winw * winh);
-  Point* pathbuf = malloc(winw * winh * sizeof(Point));
+  OutlineScratch* os = (OutlineScratch*) osRaw;
+  //temporary serial version
   for(int i = 0; i < winw * winh; i++)
   {
     if(iters[i] == NOT_COMPUTED)
@@ -226,11 +207,10 @@ void fillAll()
       //if all 4-neighbors have been computed, done
       int state = getPixelState(p, val);
       if(state != 0b1111)
-        traceOutline(p, val, pathbuf);
+        traceOutline(p, val, os);
     }
   }
-  //floodFill((Point) {1000, winh / 2}, 50, pathbuf);
-  free(pathbuf);
+  return NULL;
 }
 
 static Point movePoint(Point p, int dir)
@@ -299,9 +279,10 @@ static int getExitDir(Point p, int prevDir, int val)
   return INVALID;
 }
 
-void traceOutline(Point start, int val, Point* pbuf)
+void traceOutline(Point start, int val, OutlineScratch* os)
 {
-  Point* lastPoint = pbuf;
+  Point* outlineList = os->outlinePoints;
+  Point* lastPoint = outlineList;
   //set initial direction
   int dir = UP;
   Point p = start;
@@ -341,8 +322,8 @@ void traceOutline(Point start, int val, Point* pbuf)
     //printf("Shape bounding box: (%i, %i) to (%i, %i)\n", minx, miny, maxx, maxy);
     //get stack space for flood fill
     //Point* stack = malloc(w * h * sizeof(Point));
-    Point* stack = malloc(winw * winh * sizeof(Point));
     //go back around shape and flood fill at all points (very low overhead if nothing to be done)
+    Point* fillStack = os->fillStack;
     while(true)
     {
       Point p = *(--lastPoint);
@@ -352,26 +333,50 @@ void traceOutline(Point start, int val, Point* pbuf)
       {
         Point fillStart = {p.x + 1, p.y + 1};
         if(getPixelNoCompute(fillStart) == NOT_COMPUTED)
-          floodFill(fillStart, val, stack);
+          floodFill(fillStart, val, fillStack);
       }
-      if(lastPoint == pbuf)
+      if(lastPoint == fillStack)
         break;
     }
-    free(stack);
   }
 }
 
 int getPixelConvRate(int x, int y)
 {
-    if(iters[x + y * winw] != NOT_COMPUTED)
-        return iters[x + y * winw];
     //printf("Getting conv rate @ %i, %i\n", x, y);
-    int rv;
-    if(prec < 3)
+    long double tx = getValue(&targetX);
+    long double ty = getValue(&targetY);
+    long double ps = getValue(&pstride);
+    int rv = NOT_COMPUTED;
+    bool reflected = false;
+    if(ps >= 1e-19)
     {
-        long double r = getValue(&pstride) * (x - winw / 2) + getValue(&targetX);
-        long double i = getValue(&pstride) * (y - winh / 2) + getValue(&targetY);
+      //check for reflection across y = 0
+      //if viewport contains the line y = 0...
+      long double r = ps * (x - winw / 2) + tx;
+      long double i = ps * (y - winh / 2) + ty;
+      if(fabsl(ty) < ps * (winh / 2))
+      {
+        //get reflected pixel y for current point
+        //first need number of pixels between this pixel and y = 0
+        int dy = i / ps;
+        int mirroredY = y - 2 * dy;
+        //if mirrored position is in bounds, can copy the pixel
+        if(mirroredY >= 0 && mirroredY < winh)
+        {
+          int mirrori = x + mirroredY * winw;
+          if(iters[mirrori] != NOT_COMPUTED)
+          {
+            rv = iters[mirrori];
+            reflected = true;
+          }
+        }
+      }
+      if(!reflected)
+      {
         rv = getConvRateLD(r, i);
+        pixelsComputed++;
+      }
     }
     else
     {
@@ -390,10 +395,9 @@ int getPixelConvRate(int x, int y)
         fpcopy(&temp, &targetY);
         fpadd2(&i, &temp);
         rv = getConvRateFP(&r, &i);
+        pixelsComputed++;
     }
     iters[x + y * winw] = rv;
-    pixelsComputed++;
-    //printf("getPixel value: %i\n", rv);
     return rv;
 }
 
@@ -452,519 +456,404 @@ int getConvRateLD(long double real, long double imag)
     return iter == maxiter ? -1 : iter;
 }
 
-void fillRect(Rect r)
+void* simpleWorkerFunc(void* wi)
 {
-    //get the exact # of pixels to be computed
-    int numPx = 0;
-    //get indices of corners
-    int upperLeft = r.x + r.y * winw;
-    int upperRight = upperLeft + r.w - 1;
-    int lowerLeft = upperLeft + (r.h - 1) * winw;
-    Point* queue = malloc(2 * (r.w + r.h) * sizeof(Point));
-    int count = 0;
-    for(int i = 0; i < r.w; i++)
-    {
-        if(iters[upperLeft + i] == NOT_COMPUTED)
-        {
-            queue[count].x = r.x + i;
-            queue[count].y = r.y;
-            count++;
-        }
-        if(iters[lowerLeft + i] == NOT_COMPUTED)
-        {
-            queue[count].x = r.x + i;
-            queue[count].y = r.y + r.h - 1;
-            count++;
-        }
-    }
-    for(int i = 0; i < r.h; i++)
-    {
-        if(iters[upperLeft + i * winw] == NOT_COMPUTED)
-        {
-            queue[count].x = r.x;
-            queue[count].y = r.y + i;
-            count++;
-        }
-        if(iters[upperRight + i * winw] == NOT_COMPUTED)
-        {
-            queue[count].x = r.x + r.w - 1;
-            queue[count].y = r.y + i;
-            count++;
-        }
-    }
-    iteratePointQueue(queue, count);
-    free(queue);
-    //done if rectangle can't be subdivided & is fully computed
-    //done if all boundary points have same iter count
-    int iterCount = iters[upperLeft];
-    bool allSame = true;
-    for(int i = 0; i < r.w; i++)
-    {
-        if(iters[i + upperLeft] != iterCount ||
-           iters[i + lowerLeft] != iterCount)
-        {
-            allSame = false;
-            break;
-        }
-    }
-    for(int i = 1; i < r.h - 1; i++)
-    {
-        if(iters[i * winw + upperLeft] != iterCount ||
-           iters[i * winw + upperRight] != iterCount)
-        {
-            allSame = false;
-            break;
-        }
-    }
-    if(allSame)
-    {
-        //flood fill the rectangle with iterCount
-        for(int i = 1; i < r.w - 1; i++)
-        {
-            for(int j = 1; j < r.h - 1; j++)
-            {
-                iters[(i + r.x) + (j + r.y) * winw] = iterCount;
-            }
-        }
-        return;
-    }
-    //partition the rect into two smaller ones
-    //make sure they share all possible edges, but otherwise don't overlap
-    //cut along shorter dimension
-    //cut at the first different pixel along boundary
-    if(r.w > r.h)
-    {
-        Rect first = {r.x, r.y, r.w / 2, r.h};
-        fillRect(first);
-        Rect second = {r.x + r.w / 2, r.y, r.w - r.w / 2, r.h};
-        fillRect(second);
-        return;
-    }
-    else
-    {
-        Rect first = {r.x, r.y, r.w, r.h / 2};
-        fillRect(first);
-        Rect second = {r.x, r.y + r.h / 2, r.w, r.h - r.h / 2};
-        fillRect(second);
-        return;
-    }
-}
-
-void iteratePointQueue(Point* queue, int num)
-{
-    if(num == 0)
-        return;
-    //have count points to recompute
-    //partition evenly across threads
-    //don't make more threads than there are points
-    int numWorkers = min(numThreads, num);
-    pthread_t* threads = alloca(numWorkers * sizeof(pthread_t));
-    WorkInfo* wi = alloca(numWorkers * sizeof(WorkInfo));
-    for(int i = 0; i < numWorkers; i++)
-    {
-        //get work range in points for this thread
-        int start = i * (double) num / numWorkers;
-        int end = (i + 1) * (double) num / numWorkers;
-        //make sure all work gets finished
-        if(i == numWorkers - 1)
-            end = num;
-        wi[i].points = &queue[start];
-        wi[i].numPoints = end - start;
-        pthread_create(&threads[i], NULL, workerFunc, &wi[i]);
-    }
-    for(int i = 0; i < numWorkers; i++)
-        pthread_join(threads[i], NULL);
+  SimpleWorkInfo* swi = (SimpleWorkInfo*) wi;
+  for(int i = swi->start; i < swi->start + swi->n; i++)
+  {
+    iters[i] = NOT_COMPUTED;
+    getPixelConvRate(i % winw, i / winw);
+  }
+  return NULL;
 }
 
 void* workerFunc(void* wiRaw)
 {
-    WorkInfo* wi = (WorkInfo*) wiRaw;
-    MAKE_STACK_FP(pixFloat);
-    MAKE_STACK_FP(x);
-    MAKE_STACK_FP(yiter);
-    MAKE_STACK_FP(pstrideLocal);
-    fpcopy(&pstrideLocal, &pstride);
-    for(int i = 0; i < wi->numPoints; i++)
-        getPixelConvRate(wi->points[i].x, wi->points[i].y);
-    return NULL;
-}
-
-void* simpleWorkerFunc(void* wiRaw)
-{
-    SimpleWorkInfo* wi = (SimpleWorkInfo*) wiRaw;
-    MAKE_STACK_FP(pixFloat);
-    MAKE_STACK_FP(x);
-    MAKE_STACK_FP(yiter);
-    MAKE_STACK_FP(pstrideLocal);
-    fpcopy(&pstrideLocal, &pstride);
-    for(int i = wi->start; i < wi->start + wi->num; i++)
-        getPixelConvRate(i % winw, i / winw);
-    return NULL;
+  /*
+  WorkInfo* wi = (WorkInfo*) wiRaw;
+  MAKE_STACK_FP(pixFloat);
+  MAKE_STACK_FP(x);
+  MAKE_STACK_FP(yiter);
+  MAKE_STACK_FP(pstrideLocal);
+  fpcopy(&pstrideLocal, &pstride);
+  for(int i = 0; i < wi->numPoints; i++)
+    getPixelConvRate(wi->points[i].x, wi->points[i].y);
+  */
+  return NULL;
 }
 
 void simpleDrawBuf()
 {
-    for(int i = 0; i < winw * winh; i++)
-      iters[i] = NOT_COMPUTED;
-    int num = winw * winh;
-    pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-    SimpleWorkInfo* wi = alloca(numThreads * sizeof(SimpleWorkInfo));
-    for(int i = 0; i < numThreads; i++)
-    {
-        //get work range in points for this thread
-        int start = i * (double) num / numThreads;
-        int end = (i + 1) * (double) num / numThreads;
-        //make sure all work gets finished
-        if(i == numThreads - 1)
-            end = num;
-        wi[i].start = start;
-        wi[i].num = end - start;
-        pthread_create(&threads[i], NULL, simpleWorkerFunc, &wi[i]);
-    }
-    for(int i = 0; i < numThreads; i++)
-        pthread_join(threads[i], NULL);
-    reduceIters(iters, 2000 / winw, winw, winh);
-    if(colors)
-    {
-        for(int i = 0; i < winw * winh; i++)
-            colors[i] = getColor(iters[i]);
-    }
+  SimpleWorkInfo* swi = malloc(numThreads * sizeof(swi));
+  pthread_t* threads = malloc(numThreads * sizeof(pthread_t));
+  int totalWork = winw * winh;
+  for(int i = 0; i < totalWork; i++)
+    iters[i] = NOT_COMPUTED;
+  for(int i = 0; i < numThreads; i++)
+  {
+    swi[i].start = i * (totalWork / numThreads);
+    swi[i].n = (i + 1) * (totalWork / numThreads) - swi[i].start;
+  }
+  for(int i = 0; i < numThreads; i++)
+    pthread_create(&threads[i], NULL, simpleWorkerFunc, &swi[i]);
+  for(int i = 0; i < numThreads; i++)
+    pthread_join(threads[i], NULL);
+  //histogramFilter(iters, winw, winh);
+  logarithmFilter(iters, winw, winh);
+  if(colors)
+  {
+    for(int i = 0; i < totalWork; i++)
+      colors[i] = getColor(iters[i]);
+  }
+  free(threads);
+  free(swi);
 }
 
 void fastDrawBuf()
 {
-    pixelsComputed = 0;
-    if(verbose)
-        printf("Drawing buf with pstride = %Le\n", getValue(&pstride));
+  int tempThreads = 1;
+  pixelsComputed = 0;
+  if(verbose)
+      printf("Distance between pixels = %.2Le\n", getValue(&pstride));
+  for(int i = 0; i < winw * winh; i++)
+    iters[i] = NOT_COMPUTED;
+  pthread_t* threads = alloca(tempThreads * sizeof(pthread_t));
+  for(int i = 0; i < tempThreads; i++)
+    pthread_create(&threads[i], NULL, fillAll, &oscratch[i]);
+  for(int i = 0; i < tempThreads; i++)
+    pthread_join(threads[i], NULL);
+  int reduction = winw / 800;
+  if(reduction == 0)
+    reduction = 1;
+  reduceIters(iters, reduction, winw, winh);
+  if(colors)
+  {
     for(int i = 0; i < winw * winh; i++)
-      iters[i] = NOT_COMPUTED;
-    fillAll();
-    if(colors)
-    {
-        for(int i = 0; i < winw * winh; i++)
-            colors[i] = getColor(iters[i]);
-    }
-    if(verbose)
-    {
-      int savings = winw * winh - pixelsComputed;
-        printf("Saved %i of %i pixels (%f%%)\n", savings, winw * winh, 100.0 * savings / (winw * winh));
-    }
+      colors[i] = getColor(iters[i]);
+  }
+  if(verbose)
+  {
+    double proportionComputed = (double) pixelsComputed / (winw * winh);
+    printf("Iterated %i pixels (%.1f%%), %.1fx speedup\n",
+      pixelsComputed, 100 * proportionComputed, 1 / proportionComputed);
+  }
 }
 
 void recomputeMaxIter()
 {
-    const int normalIncrease = 2500 * zoomRate;
-    maxiter += normalIncrease;
+  const int normalIncrease = 2500 * zoomRate;
+  maxiter += normalIncrease;
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 {
-    FILE* cache = NULL;
-    if(cacheFile && useCache)
-    {
-        cache = fopen(cacheFile, "rb");
-        targetX = fpRead(cache);
-        targetY = fpRead(cache);
-        fclose(cache);
-        return;
-    }
-    long double initViewport = 4;
-    //make a temporary iteration count buffer
-    int gpx = 16;                       //size, in pixels, of GIL iteration buffer (must be PoT)
-    prec = 1;
-    globalUpdatePrec(prec);
-    zoomRate = 2;
-    targetX = FPCtorValue(prec, 0);
-    targetY = FPCtorValue(prec, 0);
-    iters = (int*) malloc(gpx * gpx * sizeof(int));
-    colors = NULL;
-    pstride = FPCtorValue(prec, initViewport / gpx);
-    winw = gpx;
-    winh = gpx;
-    FP fbestPX = FPCtor(1);
-    FP fbestPY = FPCtor(1);
-    maxiter = 10;
-    while(true)
-    {
-        if(getApproxExpo(&pstride) <= minExpo)
-        {
-            if(verbose)
-              printf("Stopping because pstride <= 2^%i\n", getApproxExpo(&pstride));
-            break;
-        }
-        printf("Pixel stride = %Le, iter cap is %i\n", getValue(&pstride), maxiter);
-        printf("Pstride as int: ");
+  FILE* cache = NULL;
+  if(cacheFile && useCache)
+  {
+      cache = fopen(cacheFile, "rb");
+      targetX = fpRead(cache);
+      targetY = fpRead(cache);
+      fclose(cache);
+      return;
+  }
+  long double initViewport = 4;
+  //make a temporary iteration count buffer
+  int gpx = 32;                       //size, in pixels, of GIL iteration buffer (must be PoT)
+  prec = 1;
+  zoomRate = 4;
+  targetX = FPCtorValue(prec, 0);
+  targetY = FPCtorValue(prec, 0);
+  iters = (int*) malloc(gpx * gpx * sizeof(int));
+  colors = NULL;
+  pstride = FPCtorValue(prec, initViewport / gpx);
+  winw = gpx;
+  winh = gpx;
+  FP fbestPX = FPCtor(1);
+  FP fbestPY = FPCtor(1);
+  maxiter = 10;
+  while(true)
+  {
+      if(getApproxExpo(&pstride) <= minExpo)
+      {
+          if(verbose)
+            printf("Stopping because pstride <= 2^%i\n", getApproxExpo(&pstride));
+          break;
+      }
+      if(verbose)
+      {
+        printf("Pixel stride = %Le. Iter cap = %i\n", getValue(&pstride), maxiter);
+        printf("Pstride: ");
         biPrint(&pstride.value);
-        for(int i = 0; i < gpx * gpx; i++)
-            iters[i] = NOT_COMPUTED;
-        simpleDrawBuf();
-        if(verbose)
-        {
-            puts("**********The buffer:**********");
-            for(int i = 0; i < gpx * gpx; i++)
-            {
-                printf("%7i ", iters[i]);
-                if(i % gpx == gpx - 1)
-                    puts("");
-            }
-            puts("*******************************");
-        }
-        int bestPX = 0;
-        int bestPY = 0;
-        int bestIters = 0;
-        u64 itersum = 0;
-        //get point with maximum iteration count (that didn't converge)
-        int cands[GIL_CANDIDATES];
-        for(int i = 0; i < GIL_CANDIDATES; i++)
-          cands[i] = -1;
-        int cutoff = 0;
-        for(int i = 0; i < gpx * gpx; i++)
-        {
-          itersum += iters[i];
-          if(iters[i] > cutoff)
+      }
+      for(int i = 0; i < gpx * gpx; i++)
+        iters[i] = NOT_COMPUTED;
+      simpleDrawBuf();
+      if(verbose)
+      {
+          puts("**********The buffer:**********");
+          for(int i = 0; i < gpx * gpx; i++)
           {
-            //replace minimum cand pt with (i, j) pt
-            //first get index of min cand
-            int minCand;
-            bool allCandsFilled = true;
-            for(int j = 0; j < GIL_CANDIDATES; j++)
+              printf("%7i ", iters[i]);
+              if(i % gpx == gpx - 1)
+                  puts("");
+          }
+          puts("*******************************");
+      }
+      int bestPX = 0;
+      int bestPY = 0;
+      int bestIters = 0;
+      u64 itersum = 0;
+      //get point with maximum iteration count (that didn't converge)
+      int cands[GIL_CANDIDATES];
+      for(int i = 0; i < GIL_CANDIDATES; i++)
+        cands[i] = -1;
+      int cutoff = 0;
+      for(int i = 0; i < gpx * gpx; i++)
+      {
+        itersum += iters[i];
+        if(iters[i] > cutoff)
+        {
+          //replace minimum cand pt with (i, j) pt
+          //first get index of min cand
+          int minCand;
+          bool allCandsFilled = true;
+          for(int j = 0; j < GIL_CANDIDATES; j++)
+          {
+            if(cands[j] < 0)
             {
-              if(cands[j] < 0)
-              {
-                minCand = j;
-                allCandsFilled = false;
-                break;
-              }
+              minCand = j;
+              allCandsFilled = false;
+              break;
+            }
+            if(iters[cands[j]] < iters[cands[minCand]])
+              minCand = j;
+          }
+          //insert new element
+          cands[minCand] = i;
+          //get index of min again for updating cutoff
+          if(allCandsFilled)
+          {
+            minCand = 0;
+            for(int j = 1; j < GIL_CANDIDATES; j++)
+            {
               if(iters[cands[j]] < iters[cands[minCand]])
                 minCand = j;
             }
-            //insert new element
-            cands[minCand] = i;
-            //get index of min again for updating cutoff
-            if(allCandsFilled)
-            {
-              minCand = 0;
-              for(int j = 1; j < GIL_CANDIDATES; j++)
-              {
-                if(iters[cands[j]] < iters[cands[minCand]])
-                  minCand = j;
-              }
-              cutoff = iters[cands[minCand]];
-            }
+            cutoff = iters[cands[minCand]];
           }
         }
-        //select next point randomly from 
-        int zoomPixel = cands[mrand % GIL_CANDIDATES];
-        bestIters = iters[zoomPixel];
-        bestPX = zoomPixel % gpx;
-        bestPY = zoomPixel / gpx;
-        printf("Zooming toward pixel (%i, %i)\n", bestPX, bestPY);
-        itersum /= (gpx * gpx); //compute average iter count
-        recomputeMaxIter();
-        if(bestIters == 0)
-        {
-            puts("getInterestingLocation() frame contains all converging points!");
-            break;
-        }
-        bool allSame = true;
-        int val = iters[0];
-        for(int i = 0; i < gpx * gpx; i++)
-        {
-            if(iters[i] != val)
-            {
-                allSame = false;
-                break;
-            }
-        }
-        if(allSame)
-        {
-            puts("getInterestingLocation() frame contains all the same iteration count!");
-            break;
-        }
-        int xmove = bestPX - gpx / 2;
-        int ymove = bestPY - gpx / 2;
-        if(xmove < 0)
-        {
-            for(int i = xmove; i < 0; i++)
-                fpsub2(&targetX, &pstride);
-        }
-        else if(xmove > 0)
-        {
-            for(int i = 0; i < xmove; i++)
-                fpadd2(&targetX, &pstride);
-        }
-        if(ymove < 0)
-        {
-            for(int i = ymove; i < 0; i++)
-                fpsub2(&targetY, &pstride);
-        }
-        else if(ymove > 0)
-        {
-            for(int i = 0; i < ymove; i++)
-                fpadd2(&targetY, &pstride);
-        }
-        //set screen position to the best pixel
-        if(upgradePrec())
-        {
-            INCR_PREC(pstride);
-            INCR_PREC(targetX);
-            INCR_PREC(targetY);
-            prec++;
-            globalUpdatePrec(prec);
-            if(verbose)
-                printf("*** Increased precision to level %i ***\n", prec);
-        }
-        //zoom in according to the PoT zoom factor defined above
+      }
+      //select next point randomly from 
+      int zoomPixel = cands[mrand % GIL_CANDIDATES];
+      bestIters = iters[zoomPixel];
+      bestPX = zoomPixel % gpx;
+      bestPY = zoomPixel / gpx;
+      itersum /= (gpx * gpx); //compute average iter count
+      recomputeMaxIter();
+      if(bestIters == 0)
+      {
+          puts("getInterestingLocation() frame contains all converging points!");
+          break;
+      }
+      bool allSame = true;
+      int val = iters[0];
+      for(int i = 0; i < gpx * gpx; i++)
+      {
+          if(iters[i] != val)
+          {
+              allSame = false;
+              break;
+          }
+      }
+      if(allSame)
+      {
+          puts("getInterestingLocation() frame contains all the same iteration count!");
+          break;
+      }
+      int xmove = bestPX - gpx / 2;
+      int ymove = bestPY - gpx / 2;
+      if(xmove < 0)
+      {
+          for(int i = xmove; i < 0; i++)
+              fpsub2(&targetX, &pstride);
+      }
+      else if(xmove > 0)
+      {
+          for(int i = 0; i < xmove; i++)
+              fpadd2(&targetX, &pstride);
+      }
+      if(ymove < 0)
+      {
+          for(int i = ymove; i < 0; i++)
+              fpsub2(&targetY, &pstride);
+      }
+      else if(ymove > 0)
+      {
+          for(int i = 0; i < ymove; i++)
+              fpadd2(&targetY, &pstride);
+      }
+      //set screen position to the best pixel
+      if(upgradePrec())
+      {
+          INCR_PREC(pstride);
+          INCR_PREC(targetX);
+          INCR_PREC(targetY);
+          prec++;
+          if(verbose)
+              printf("*** Increased precision to level %i ***\n", prec);
+      }
+      //zoom in according to the PoT zoom factor defined above
+      if(verbose)
+      {
         printf("target x: ");
         biPrint(&targetX.value);
         printf("target y: ");
         biPrint(&targetY.value);
-        fpshr(pstride, zoomRate);
-    }
-    free(iters); 
-    //do not lose any precision when storing targetX, targetY
-    puts("Saving target position.");
-    if(cacheFile)
-    {
-        cache = fopen(cacheFile, "wb");
-        //write targetX, targetY to the cache file
-        fpWrite(&targetX, cache);
-        fpWrite(&targetY, cache);
-        fclose(cache);
-    }
-    FPDtor(&pstride);
-    FPDtor(&fbestPX);
-    FPDtor(&fbestPY);
+      }
+      fpshr(pstride, zoomRate);
+  }
+  free(iters); 
+  //do not lose any precision when storing targetX, targetY
+  puts("Saving target position.");
+  if(cacheFile)
+  {
+      cache = fopen(cacheFile, "wb");
+      //write targetX, targetY to the cache file
+      fpWrite(&targetX, cache);
+      fpWrite(&targetY, cache);
+      fclose(cache);
+  }
+  FPDtor(&pstride);
+  FPDtor(&fbestPX);
+  FPDtor(&fbestPY);
 }
 
 bool upgradePrec()
 {
-  //min # of trailing zeroes in reserve
+  //# of bits desired after leading 1 bit in pstride
   int trailing = 12;
-  u64 mask = 1;
-  bool rv = false;
-  u64 lastWord = pstride.value.val[prec - 1];
-  for(int i = 0; i < zoomRate + trailing; i++)
-  {
-    if(lastWord & mask)
-    {
-      rv = true;
-      break;
-    }
-    mask <<= 1;
-  }
-  return rv;
+  //note: reserves extra bits according to zoom expo
+  int totalBits = 64 * pstride.value.size;
+  if(totalBits - lzcnt(&pstride.value) < trailing + zoomRate)
+    return true;
+  return false;
 }
 
 int main(int argc, const char** argv)
 {
-    //Process cli arguments
-    //set all the arguments to default first
-    const char* targetCache = NULL;
-    bool useTargetCache = false;
-    //numThreads = 4;
-    numThreads = 4;
-    const int defaultWidth = 640;
-    const int defaultHeight = 480;
-    int imageWidth = defaultWidth;
-    int imageHeight = defaultHeight;
-    const char* resumeFile = NULL;
-    verbose = false;
-    deepestExpo = -300;
-    int seed = 0;
-    for(int i = 1; i < argc; i++)
+  //Process cli arguments
+  //set all the arguments to default first
+  const char* targetCache = NULL;
+  bool useTargetCache = false;
+  numThreads = 1;
+  const int defaultWidth = 640;
+  const int defaultHeight = 480;
+  int imageWidth = defaultWidth;
+  int imageHeight = defaultHeight;
+  const char* resumeFile = NULL;
+  verbose = false;
+  deepestExpo = -300;
+  int seed = 0;
+  bool customPosition = false;
+  long double inputX, inputY;
+  for(int i = 1; i < argc; i++)
+  {
+    if(strcmp(argv[i], "-n") == 0)
     {
-        if(strcmp(argv[i], "-n") == 0)
-        {
-            //# of threads is next
-            sscanf(argv[++i], "%i", &numThreads);
-            //sanity check it
-            if(numThreads < 1)
-            {
-                puts("Can't have < 1 threads.");
-                numThreads = 1;
-            }
-        }
-        else if(strcmp(argv[i], "--targetcache") == 0)
-            targetCache = argv[++i];
-        else if(strcmp(argv[i], "--usetargetcache") == 0)
-            useTargetCache = true;
-        else if(strcmp(argv[i], "--size") == 0)
-        {
-            if(2 != sscanf(argv[++i], "%ix%i", &imageWidth, &imageHeight))
-            {
-                puts("Size must be specified in the format <width>x<height>");
-                imageHeight = defaultWidth;
-                imageHeight = defaultHeight;
-            }
-        }
-        else if(strcmp(argv[i], "--resume") == 0)
-            resumeFile = argv[++i];
-        else if(strcmp(argv[i], "--verbose") == 0)
-            verbose = true;
-        else if(strcmp(argv[i], "--depth") == 0)
-            sscanf(argv[++i], "%i", &deepestExpo);
-        else if(strcmp(argv[i], "--seed") == 0)
-          sscanf(argv[++i], "%i", &seed);
+      //# of threads is next
+      sscanf(argv[++i], "%i", &numThreads);
+      //sanity check it
+      if(numThreads < 1)
+      {
+        puts("Can't have < 1 threads.");
+        numThreads = 1;
+      }
     }
-    if(seed == 0)
-      seed = clock();
-    srand(seed);
-    printf("Running on %i thread(s).\n", numThreads);
-    if(targetCache && useTargetCache)
-        printf("Will read target location from \"%s\"\n", targetCache);
-    else if(targetCache)
-        printf("Will write target location to \"%s\"\n", targetCache);
-    printf("Will output %ix%i images.\n", imageWidth, imageHeight);
+    else if(strcmp(argv[i], "--targetcache") == 0)
+        targetCache = argv[++i];
+    else if(strcmp(argv[i], "--usetargetcache") == 0)
+        useTargetCache = true;
+    else if(strcmp(argv[i], "--size") == 0)
+    {
+      if(2 != sscanf(argv[++i], "%ix%i", &imageWidth, &imageHeight))
+      {
+        puts("Size must be specified in the format <width>x<height>");
+        imageHeight = defaultWidth;
+        imageHeight = defaultHeight;
+      }
+    }
+    else if(strcmp(argv[i], "--resume") == 0)
+      resumeFile = argv[++i];
+    else if(strcmp(argv[i], "--verbose") == 0)
+      verbose = true;
+    else if(strcmp(argv[i], "--depth") == 0)
+      sscanf(argv[++i], "%i", &deepestExpo);
+    else if(strcmp(argv[i], "--seed") == 0)
+      sscanf(argv[++i], "%i", &seed);
+    else if(strcmp(argv[i], "--position") == 0)
+    {
+      customPosition = true;
+      int valid = 0;
+      valid += sscanf(argv[++i], "%Lf", &inputX);
+      valid += sscanf(argv[++i], "%Lf", &inputY);
+      if(valid != 2)
+      {
+        puts("Invalid x/y formatting! Will generate location instead.");
+        customPosition = false;
+      }
+    }
+  }
+  if(seed == 0)
+    seed = clock();
+  srand(seed);
+  printf("Running on %i thread(s).\n", numThreads);
+  if(targetCache && useTargetCache)
+    printf("Will read target location from \"%s\"\n", targetCache);
+  else if(targetCache)
+    printf("Will write target location to \"%s\"\n", targetCache);
+  printf("Will output %ix%i images.\n", imageWidth, imageHeight);
+  if(customPosition)
+  {
+    targetX = FPCtorValue(2, inputX);
+    targetY = FPCtorValue(2, inputY);
+  }
+  else
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-    prec = 1;
-    globalUpdatePrec(prec);
-    zoomRate = 1;
-    iters = malloc(imageWidth * imageHeight * sizeof(int));
-    colors = malloc(imageWidth * imageHeight * sizeof(unsigned));
-    outlineHits = malloc(imageWidth * imageHeight * sizeof(bool));
-    winw = imageWidth;
-    winh = imageHeight;
-    pstride = FPCtorValue(prec, 4.0 / imageWidth);
-    printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-    maxiter = 100;
-    colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
-    initColorTable();
-    filecount = 0;
-    //resume file: filecount, last maxiter, prec
-    while(getApproxExpo(&pstride) >= deepestExpo)
+  prec = 1;
+  zoomRate = 1;
+  iters = malloc(imageWidth * imageHeight * sizeof(int));
+  colors = malloc(imageWidth * imageHeight * sizeof(unsigned));
+  winw = imageWidth;
+  winh = imageHeight;
+  pstride = FPCtorValue(prec, 4.0 / imageWidth);
+  printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
+  maxiter = 5000;
+  colortable = (Uint32*) malloc(sizeof(Uint32) * 360);
+  initColorTable();
+  initOutlineScratch();
+  filecount = 0;
+  //resume file: filecount, last maxiter, prec
+  while(getApproxExpo(&pstride) >= deepestExpo)
+  {
+    time_t start = time(NULL);
+    simpleDrawBuf();
+    //fastDrawBuf();
+    writeImage();
+    fpshrOne(pstride);
+    recomputeMaxIter();
+    int timeDiff = time(NULL) - start;
+    printf("Image #%i took %i seconds (iter cap = %i).\n",
+      filecount - 1, timeDiff, maxiter);
+    if(upgradePrec())
     {
-        time_t start = time(NULL);
-        clock_t cstart = clock();
-        fastDrawBuf();
-        //simpleDrawBuf();
-        writeImage();
-        printf("*** Time elapsed: %f ***\n", ((double) (clock() - cstart)) / CLOCKS_PER_SEC);
-        return 0;
-        fpshrOne(pstride);
-        recomputeMaxIter();
-        int timeDiff = time(NULL) - start;
-        printf("Image #%i took %i seconds. ", filecount - 1, timeDiff);
-        if(verbose)
-        {
-            printf("iter cap: %i, ", maxiter);
-            printf("precision: %i, ", prec);
-            printf("px/sec/thread: %i\n", winw * winh / max(1, timeDiff) / numThreads);
-        }
-        else
-            puts(".");
-        if(upgradePrec())
-        {
-            INCR_PREC(pstride);
-            prec++;
-            globalUpdatePrec(prec);
-            if(verbose)
-                printf("*** Increasing precision to level %i (%i bits) ***\n",
-                    prec, 64 * prec);
-        }
+      INCR_PREC(pstride);
+      prec++;
+      if(verbose)
+        printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 64 * prec);
     }
-    free(iters);
-    free(colors);
-    free(colortable);
+  }
+  free(iters);
+  free(colors);
+  free(colortable);
 }
 

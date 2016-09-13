@@ -178,8 +178,8 @@ void biPrintBin(BigInt* op)
 {
     for(int i = 0; i < op->size; i++)
     {
-        u64 mask = (1ULL << 62);
-        for(int j = 0; j <= 62; j++)
+        u64 mask = (1ULL << 63);
+        for(int j = 0; j < 64; j++)
         {
             int bit = op->val[i] & mask ? 1 : 0;
             printf("%i", bit);
@@ -196,6 +196,29 @@ bool biNthBit(BigInt* op, int n)
     if(words < 0 || words >= op->size)
         return false;
     return (op->val[words] & (1ULL << (63 - bits))) ? true : false;
+}
+
+int lzcnt(BigInt* op)
+{
+  int i;
+  for(i = 0; i < op->size; i++)
+  {
+    if(op->val[i])
+      break;
+  }
+  if(i == op->size)
+    return i * 64;
+  int rv = i * 64;
+  u64 mask = (1ULL << 63);
+  while(mask)
+  {
+    if((op->val[i] & mask) == 0)
+      rv++;
+    else
+      break;
+    mask >>= 1;
+  }
+  return rv;
 }
 
 void profiler()

@@ -1,6 +1,7 @@
 CFLAGS=-std=c11 -Ofast -march=native -mtune=native -ffast-math
 DEBUGFLAGS=-std=c11 -g
 FASTCFLAGS=-std=c11 -O0
+PROFILINGFLAGS=-std=c11 -Ofast -march=native -mtune=native -ffast-math -pg
 SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c lodepng.c
 INCLUDE=#-I/usr/local/include/glib-2.0 -I/usr/local/include/glib-2.0/glib
 
@@ -11,6 +12,10 @@ all:
 quick: 
 	nasm -f macho64 routines.asm -o routines.o
 	gcc ${FASTCFLAGS} ${INCLUDE} ${SOURCES} routines.o -lc -lpthread -lglib-2.0 -o build/Mandelbrot
+
+profiling:
+	nasm -f macho64 routines.asm -o routines.o
+	gcc ${PROFILINGFLAGS} ${INCLUDE} ${SOURCES} routines.o -lc -lpthread -lglib-2.0 -o build/Mandelbrot
 
 linux:
 	nasm -f macho64 routines.asm -o routines.o

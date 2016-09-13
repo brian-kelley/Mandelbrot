@@ -51,6 +51,7 @@ void biTwoComplement(BigInt* op);
 void biPrint(BigInt* op);
 void biPrintBin(BigInt* op);
 bool biNthBit(BigInt* op, int n);
+int lzcnt(BigInt* op);
 
 void profiler();
 

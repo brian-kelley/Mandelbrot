@@ -8,7 +8,6 @@
 #include "image.h"
 #include "assert.h"
 #include "complex.h"
-//#include <glib-2.0/glib.h>
 
 #define CRASH(msg) {printf("Error: " msg " in file " __FILE__ ", line %i\n", __LINE__); exit(1);}
 
@@ -35,21 +34,28 @@ typedef struct
     int y;
 } Point;
 
+//Thread-local space for flood fill stack & outline point list
 typedef struct
 {
-    Point* points;
-    int numPoints;
-} WorkInfo;
+  Point* fillStack;
+  Point* outlinePoints;
+} OutlineScratch;
 
+//Just give 1D in iters
 typedef struct
 {
   int start;
-  int num;
+  int n;
 } SimpleWorkInfo;
 
-void simpleDrawBuf();   //naive but still parallel
+typedef struct
+{
+  //need an atomic int32 for the current work index
+  int pad;
+} WorkInfo;
+
+void simpleDrawBuf();
 void fastDrawBuf();     //uses boundary + fill optimization
-void fillRect(Rect r);
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 void initColorTable();    //compute the RGBA values and store in a static table
@@ -72,13 +78,14 @@ bool upgradePrec();  //given pstride, does precision need to be upgraded
 void iteratePointQueue(Point* queue, int num);   //iterate the points in parallel
 
 //Exact boundary tracing functions
-void fillAll();
+void* fillAll(void* osRaw);
 //Generic get value of pixel
 int getPixel(Point p);
 //Get value of pixel but can return NOT_COMPUTED
 int getPixelNoCompute(Point p);
 //trace boundary of shape; precondition: start point is an upper-left corner
-void traceOutline(Point start, int val, Point* pbuf);
+void traceOutline(Point start, int val, OutlineScratch* pbuf);
 bool inBounds(Point p);
 
 void floodFill(Point p, int val, Point* stack);
+void initOutlineScratch();
