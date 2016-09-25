@@ -6,72 +6,59 @@
 
 int* iters;
 
-void blockFilter(float constant, Uint32* buf, int w, int h)
+void blockFilter(double constant, Uint32* buf, int w, int h)
 {
   Uint32* blurred = (Uint32*) malloc(w * h * sizeof(Uint32));
   const Uint32 BLACK = 0xFF;        //opaque black
   //write the blurred pixels into the new buffer
   bool fadeIntoBlack = false;
+#define HANDLE_POS(xx, yy, weight) \
+  { \
+    if((xx) >= 0 && (xx) < (w) && (yy) >= 0 && (yy) < (h)) \
+    { \
+      r += (weight) * GET_R(buf[(xx) + (yy) * (w)]); \
+      g += (weight) * GET_G(buf[(xx) + (yy) * (w)]); \
+      b += (weight) * GET_B(buf[(xx) + (yy) * (w)]); \
+      totalWeight += (weight); \
+    } \
+  }
+  double cornerWeight = constant * constant;
+  double edgeWeight = (1.0 - 2.0 * constant) * constant;
+  double centerWeight = (1.0 - 2.0 * constant) * (1.0 - 2.0 * constant);
   for(int i = 0; i < w; i++)
   {
     for(int j = 0; j < h; j++)
     {
-      float rsum = 0;
-      float gsum = 0;
-      float bsum = 0;
-      float totalWeight = 0;  //want total weight to be 1 after adding all neighbors and self
-      if(i > 0)
-      {
-        if(!fadeIntoBlack || buf[i - 1 + w * j] != BLACK)
-        {
-          rsum += constant * GET_R(buf[i - 1 + w * j]);
-          gsum += constant * GET_G(buf[i - 1 + w * j]);
-          bsum += constant * GET_B(buf[i - 1 + w * j]);
-          totalWeight += constant;
-        }
-      }
-      if(i < w - 1)
-      {
-        if(!fadeIntoBlack || buf[i - 1 + w * j] != BLACK)
-        {
-          rsum += constant * GET_R(buf[i + 1 + w * j]);
-          gsum += constant * GET_G(buf[i + 1 + w * j]);
-          bsum += constant * GET_B(buf[i + 1 + w * j]);
-          totalWeight += constant;
-        }
-      }
-      if(j > 0)
-      {
-        if(!fadeIntoBlack || buf[i - 1 + w * j] != BLACK)
-        {
-          rsum += constant * GET_R(buf[i + w * (j - 1)]);
-          gsum += constant * GET_G(buf[i + w * (j - 1)]);
-          bsum += constant * GET_B(buf[i + w * (j - 1)]);
-          totalWeight += constant;
-        }
-      }
-      if(j < h - 1)
-      {
-        if(!fadeIntoBlack || buf[i - 1 + w * j] != BLACK)
-        {
-          rsum += constant * GET_R(buf[i + w * (j + 1)]);
-          gsum += constant * GET_G(buf[i + w * (j + 1)]);
-          bsum += constant * GET_B(buf[i + w * (j + 1)]);
-          totalWeight += constant;
-        }
-      }
-      rsum += (1.0f - totalWeight) * GET_R(buf[i + w * j]);
-      gsum += (1.0f - totalWeight) * GET_G(buf[i + w * j]);
-      bsum += (1.0f - totalWeight) * GET_B(buf[i + w * j]);
-      //now [rgb]sum have the final color
-      //clamp to [0, 0x100)
-      rsum = min(rsum, 0xFF);
-      gsum = min(gsum, 0xFF);
-      bsum = min(bsum, 0xFF);
-      rsum = max(rsum, 0);
-      gsum = max(gsum, 0);
-      bsum = max(bsum, 0);
-      blurred[i + j * w] = ((unsigned) rsum << 24) | ((unsigned) gsum << 16) | ((unsigned) bsum << 8) | 0xFF;
+      double r = 0.0;
+      double g = 0.0;
+      double b = 0.0;
+      double totalWeight = 0;
+      /*
+      HANDLE_POS(i - 1, j - 1, cornerWeight);
+      HANDLE_POS(i,     j - 1, edgeWeight);
+      HANDLE_POS(i + 1, j - 1, cornerWeight);
+      HANDLE_POS(i - 1, j,     edgeWeight);
+      */
+      HANDLE_POS(i,     j,     centerWeight);
+      /*
+      HANDLE_POS(i + 1, j,     edgeWeight);
+      HANDLE_POS(i - 1, j + 1, cornerWeight);
+      HANDLE_POS(i,     j + 1, edgeWeight);
+      HANDLE_POS(i + 1, j + 1, cornerWeight);
+      */
+      double invWeight = 1.0 / totalWeight;
+      int rr = r * invWeight;
+      int gg = g * invWeight;
+      int bb = b * invWeight;
+      rr = min(rr, 255);
+      gg = min(gg, 255);
+      bb = min(bb, 255);
+      rr = max(rr, 0);
+      gg = max(gg, 0);
+      bb = max(bb, 0);
+      blurred[i + j * w] = ((unsigned) rr << 24) |
+                           ((unsigned) gg << 16) |
+                           ((unsigned) bb << 8) | 0xFF;
     }
   }
   //copy blurred pixels back to original buffer
@@ -122,7 +109,7 @@ static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
     return 0;
   if(lhs == -1)
     return 1;
-  if(rhs == 1)
+  if(rhs == -1)
     return -1;
   if(lhs < rhs)
     return -1;
@@ -133,10 +120,9 @@ static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 
 void histogramFilter(int* iterbuf, int w, int h)
 {
-  //BROKEN - WIP
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
   //DELTA_FACTOR to get change in color map index (index is truncated to int)
-  const double DELTA_FACTOR = 50;
+  const double DELTA_FACTOR = 1500;
   iters = iterbuf;
   int* pixelList = malloc(w * h * sizeof(int));
   for(int i = 0; i < w * h; i++)
@@ -148,22 +134,14 @@ void histogramFilter(int* iterbuf, int w, int h)
   while(iters[pixelList[diverged - 1]] == -1)
     diverged--;
   printf("%i of %i (%f%%) diverged (colored)\n", diverged, w * h, 100.0 * diverged / (w * h));
-  int lowest = iters[pixelList[0]];
-  /*
-  for(int y = 0; y < h; y++)
+  //int lowest = iters[pixelList[0]];
+  int lowest = 0;
+  for(int i = 0; i < w * h; i++)
   {
-    for(int x = 0; x < w; x++)
-    {
-      int index = x + y * w;
-      printf("%i ", iters[pixelList[index]]);
-    }
-    puts("");
+    int val = iters[pixelList[i]];
+    if(val >= 0 && val < iters[pixelList[lowest]])
+      lowest = i;
   }
-  puts("");
-  puts("");
-  */
-  puts("Color mappings:");
-  int printed = 0;
   for(int i = 0; i < diverged; i++)
   {
     if(iters[pixelList[i]] == -1)
@@ -177,24 +155,84 @@ void histogramFilter(int* iterbuf, int w, int h)
       i++;
     int num = i - start;
     int mapping = lowest + (DELTA_FACTOR * start / diverged);
-    printf("(%5i -> %5i) ", val, mapping);
-    if((printed++) % 10 == 9)
-      puts("");
     for(int j = start; j < start + num; j++)
       iters[pixelList[j]] = mapping;
   }
-  puts("");
   free(pixelList);
+}
+
+static int logMap(int orig)
+{
+  return 50.0 * log(orig + 20);
 }
 
 void logarithmFilter(int* iterbuf, int w, int h)
 {
+  const int desiredRange = 2000;   //2 full spectrum cycles?
+  //scan for minimum and maximum colored values
+  int lo = INT_MAX;
+  int hi = 0;
+  for(int i = 0; i < w * h; i++)
+  {
+    int val = iterbuf[i];
+    if(val > 0)
+    {
+      if(val < lo)
+        lo = val;
+      if(val > hi)
+        hi = val;
+    }
+  }
+  int mapLo = logMap(lo);
+  int mapHi = logMap(hi);
+  double rangeScale = (double) desiredRange / (mapHi - mapLo);
   for(int i = 0; i < w * h; i++)
   {
     if(iterbuf[i] != -1)
-    {
-      iterbuf[i] = 40 * log(iterbuf[i] + 100);
-    }
+      iterbuf[i] = mapLo + (logMap(iterbuf[i]) - mapLo) * rangeScale;
   }
 }
 
+//#define EXPO_SCALE 80.0
+//#define MAP_EXPO 0.45
+
+#define EXPO_SCALE 300.0
+#define MAP_EXPO 0.2
+
+static double expoMap(double orig)
+{
+  return EXPO_SCALE * pow(orig, MAP_EXPO);
+}
+
+static double invExpoMap(double orig)
+{
+  // y = 80x^0.45
+  // y/80 = x^0.45
+  // (y/80)^(1/0.45) = (x^0.45)^(1/0.45)
+  // (y/80)^(1/0.45) = x
+  return pow(orig / EXPO_SCALE, 1.0 / MAP_EXPO);
+}
+
+void exponentialFilter(int* iterbuf, int w, int h)
+{
+  const int desiredRange = 2000;   //2 full spectrum cycles?
+  //get lowest colored value in buf
+  int lowest = INT_MAX;
+  for(int i = 0; i < w * h; i++)
+  {
+    if(iterbuf[i] >= 0 && iterbuf[i] < lowest)
+      lowest = iterbuf[i];
+  }
+  int lowmap = expoMap(lowest);
+  int cap = invExpoMap(lowmap + desiredRange);
+  for(int i = 0; i < w * h; i++)
+  {
+    if(iterbuf[i] > cap)
+      iterbuf[i] = cap;
+  }
+  for(int i = 0; i < w * h; i++)
+  {
+    if(iterbuf[i] != -1)
+      iterbuf[i] = expoMap(iterbuf[i]);
+  }
+}

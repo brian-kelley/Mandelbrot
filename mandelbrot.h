@@ -1,13 +1,17 @@
-#include "stdio.h"
-#include "stdlib.h"
-#include "math.h"
-#include "time.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
+#include <time.h>
+#include <assert.h>
+#include <stdatomic.h>
 #include "pthread.h"
 #include "lodepng.h"
 #include "fixedpoint.h"
+#include "color.h"
 #include "image.h"
-#include "assert.h"
 #include "complex.h"
+#include "x86intrin.h"
+#include "immintrin.h"
 
 #define CRASH(msg) {printf("Error: " msg " in file " __FILE__ ", line %i\n", __LINE__); exit(1);}
 
@@ -55,7 +59,12 @@ typedef struct
 } WorkInfo;
 
 void simpleDrawBuf();
+void drawBufSIMD32();
+void* simd32Worker(void* unused);
+void* simd64Worker(void* unused);
+void drawBufSIMD64();
 void fastDrawBuf();     //uses boundary + fill optimization
+void colorTestDrawBuf();  //draws 2 periods of the color map as a spectrum
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 void initColorTable();    //compute the RGBA values and store in a static table
@@ -89,3 +98,4 @@ bool inBounds(Point p);
 
 void floodFill(Point p, int val, Point* stack);
 void initOutlineScratch();
+

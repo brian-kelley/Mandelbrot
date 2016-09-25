@@ -1,4 +1,0 @@
--Replace the digitmask/carry bit thing with full 64 bit words for bigint
--Use asm to implement all arithmetic
--adc instruction (add with carry) can replace the 64th bit for carry information
--accordingly, change fixed-point conversion functions 
