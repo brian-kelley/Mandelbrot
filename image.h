@@ -49,7 +49,11 @@ void handleNonColored(Image* im);
 
 float getPercentileValue(float* buf, int w, int h, float proportion);
 
-void colorLinearTwoColor(Image* im);
+// *** Color options, many combinations ***//
+// Exponential, logarithmic, histogram
+// Banded or smooth
+// Non-weighted or weighted
+
 void colorExpoCyclic(Image* im, float expo);
 void colorLogCyclic(Image* im);
 void colorHist(Image* im);

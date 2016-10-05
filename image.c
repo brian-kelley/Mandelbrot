@@ -161,33 +161,6 @@ void handleNonColored(Image* im)
   }
 }
 
-void colorLinearTwoColor(Image* im)
-{
-  assert(im->numColors == 2);
-  handleNonColored(im);
-  //get minimum value
-  int minVal = INT_MAX;
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->iters[i] > 0 && im->iters[i] < INT_MAX)
-    {
-      minVal = im->iters[i];
-    }
-  }
-  //from that get max value
-  int maxVal = minVal + im->period * im->cycles;
-  //clamp iter values and lerp between the two colors
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->iters[i] > 0)
-    {
-      int clampedVal = im->iters[i] > maxVal ? maxVal : im->iters[i];
-      float k = (double) (clampedVal - minVal) / (maxVal - minVal);
-      im->fb[i] = lerp(im->palette[0], im->palette[1], k);
-    }
-  }
-}
-
 void histogramFilterWeighted(int* iterbuf, int w, int h, float* weights, int numColors)
 {
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
@@ -300,7 +273,7 @@ void colorExpoCyclic(Image* im, float expo)
   for(int i = 0; i < im->w * im->h; i++)
   {
     if(im->iters[i] >= 0)
-      im->floatBuf[i] = pow(im->iters[i], expo);
+      im->floatBuf[i] = pow(im->iters[i], expo) - 1;
     else
       im->floatBuf[i] = -1;
   }
@@ -308,18 +281,21 @@ void colorExpoCyclic(Image* im, float expo)
   //clamp values
   for(int i = 0; i < im->w * im->h; i++)
   {
-    if(im->floatBuf[i] >= 0 && im->floatBuf[i] > cap)
+    if(im->floatBuf[i] > cap)
       im->floatBuf[i] = cap;
   }
-  float minMapped = pow(minVal, expo);
+  float minMapped = pow(minVal, expo) - 1;
   //scale up to reach desired color range
   float scale = (im->period * im->cycles) / (cap - minMapped);
   float perSegment = (float) im->period / im->numColors;
   for(int i = 0; i < im->w * im->h; i++)
   {
-    float val = im->floatBuf[i] * scale;
+    //subtract 1 so that effective min value maps to 0 (origin in color cycle)
+    float val = im->floatBuf[i];
     if(val >= 0)
     {
+      float delta = (val - minMapped) * scale;
+      val = minMapped + delta;
       int segment = val / perSegment;
       float lerpK = 1 - (val - segment * perSegment) / (perSegment);
       int lowColorIndex = segment % im->numColors;

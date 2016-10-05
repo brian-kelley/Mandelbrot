@@ -180,7 +180,7 @@ static void colorMap()
   im.palette = rgbColors;
   im.numColors = 3;
   im.period = 100;
-  im.cycles = 5.0;
+  im.cycles = 1.0;
   colorExpoCyclic(&im, 0.3);
 }
 
@@ -1058,11 +1058,10 @@ int main(int argc, const char** argv)
   initOutlineScratch();
   filecount = 0;
   //resume file: filecount, last maxiter, prec
-  while(getApproxExpo(&pstride) >= deepestExpo && filecount < 1)
+  while(getApproxExpo(&pstride) >= deepestExpo)
   {
     Time start = getTime();
-    //simpleDrawBuf();
-    colorTestDrawBuf();
+    simpleDrawBuf();
     if(verbose)
     {
       double proportionComputed = (double) pixelsComputed / (winw * winh);
