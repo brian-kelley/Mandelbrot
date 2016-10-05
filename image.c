@@ -4,7 +4,43 @@
 #define GET_G(px) (((px) & 0xFF0000) >> 16)
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
-int* iters;
+static int* _iters;
+float* imgScratch;
+
+Uint32 lerp(Uint32 c1, Uint32 c2, double k)
+{
+  double red = ((c1 & 0xFF000000) >> 24) * k + ((c2 & 0xFF000000) >> 24) * (1 - k);
+  double grn = ((c1 & 0xFF0000) >> 16) * k + ((c2 & 0xFF0000) >> 16) * (1 - k);
+  double blu = ((c1 & 0xFF00) >> 8) * k + ((c2 & 0xFF00) >> 8) * (1 - k);
+  return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
+}
+
+Uint32 getColorCyclic(int val, Uint32* colors, int numColors, int period)
+{
+  if(val == -1)
+    return 0xFF;           //converged: black
+  else if(val < 0)
+    return 0x909090FF;  //blank/invalid: grey
+  val = (val + period) % period;
+  double segsize = (double) period / numColors;
+  int seg = (double) val / segsize;
+  double k = 1.0 - fmod(val, segsize) / segsize;
+  return lerp(colors[seg], colors[(seg + 1) % numColors], k);
+}
+
+Uint32 getColorOneWay(int val, Uint32* colors, int numColors, int period)
+{
+  if(val == -1)
+    return 0xFF;           //converged: black
+  else if(val < 0)
+    return 0x909090FF;  //blank/invalid: grey
+  numColors--;
+  val = (val + period) % period;
+  double segsize = (double) period / numColors;
+  int seg = (double) val / segsize;
+  double k = 1.0 - fmod(val, segsize) / segsize;
+  return lerp(colors[seg], colors[(seg + 1)], k);
+}
 
 void blockFilter(double constant, Uint32* buf, int w, int h)
 {
@@ -33,19 +69,15 @@ void blockFilter(double constant, Uint32* buf, int w, int h)
       double g = 0.0;
       double b = 0.0;
       double totalWeight = 0;
-      /*
       HANDLE_POS(i - 1, j - 1, cornerWeight);
       HANDLE_POS(i,     j - 1, edgeWeight);
       HANDLE_POS(i + 1, j - 1, cornerWeight);
       HANDLE_POS(i - 1, j,     edgeWeight);
-      */
       HANDLE_POS(i,     j,     centerWeight);
-      /*
       HANDLE_POS(i + 1, j,     edgeWeight);
       HANDLE_POS(i - 1, j + 1, cornerWeight);
       HANDLE_POS(i,     j + 1, edgeWeight);
       HANDLE_POS(i + 1, j + 1, cornerWeight);
-      */
       double invWeight = 1.0 / totalWeight;
       int rr = r * invWeight;
       int gg = g * invWeight;
@@ -103,8 +135,8 @@ void reduceIters(int* iterbuf, int diffCap, int w, int h)
 //comparator returns -1 if lhs < rhs, 1 if lhs > rhs
 static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 {
-  int lhs = iters[*((int*) lhsRaw)];
-  int rhs = iters[*((int*) rhsRaw)];
+  int lhs = _iters[*((int*) lhsRaw)];
+  int rhs = _iters[*((int*) rhsRaw)];
   if(lhs == rhs)
     return 0;
   if(lhs == -1)
@@ -118,12 +150,48 @@ static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
   return 0;
 }
 
-void histogramFilter(int* iterbuf, int w, int h)
+void handleNonColored(Image* im)
+{
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] == -1)
+      im->fb[i] = 0xFF;
+    else if(im->iters[i] < 0)
+      im->fb[i] = 0x999999FF;
+  }
+}
+
+void colorLinearTwoColor(Image* im)
+{
+  assert(im->numColors == 2);
+  handleNonColored(im);
+  //get minimum value
+  int minVal = INT_MAX;
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] > 0 && im->iters[i] < INT_MAX)
+    {
+      minVal = im->iters[i];
+    }
+  }
+  //from that get max value
+  int maxVal = minVal + im->period * im->cycles;
+  //clamp iter values and lerp between the two colors
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] > 0)
+    {
+      int clampedVal = im->iters[i] > maxVal ? maxVal : im->iters[i];
+      float k = (double) (clampedVal - minVal) / (maxVal - minVal);
+      im->fb[i] = lerp(im->palette[0], im->palette[1], k);
+    }
+  }
+}
+
+void histogramFilterWeighted(int* iterbuf, int w, int h, float* weights, int numColors)
 {
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
-  //DELTA_FACTOR to get change in color map index (index is truncated to int)
-  const double DELTA_FACTOR = 1500;
-  iters = iterbuf;
+  _iters = iterbuf;
   int* pixelList = malloc(w * h * sizeof(int));
   for(int i = 0; i < w * h; i++)
     pixelList[i] = i;
@@ -131,108 +199,168 @@ void histogramFilter(int* iterbuf, int w, int h)
   qsort(pixelList, w * h, sizeof(int), pixelCompare);
   //get # of diverged pixels
   int diverged = w * h;
-  while(iters[pixelList[diverged - 1]] == -1)
+  while(iterbuf[pixelList[diverged - 1]] == -1)
     diverged--;
-  printf("%i of %i (%f%%) diverged (colored)\n", diverged, w * h, 100.0 * diverged / (w * h));
-  //int lowest = iters[pixelList[0]];
-  int lowest = 0;
-  for(int i = 0; i < w * h; i++)
+  int* colorOffsets = malloc((numColors + 1) * sizeof(int));
+  printf("Raw weights: ");
+  for(int i = 0; i < numColors; i++)
+    printf("%f ", weights[i]);
+  float* normalWeights = malloc(numColors * sizeof(float));
   {
-    int val = iters[pixelList[i]];
-    if(val >= 0 && val < iters[pixelList[lowest]])
-      lowest = i;
+    float accum = 0;
+    for(int i = 0; i < numColors; i++)
+      accum += weights[i];
+    for(int i = 0; i < numColors; i++)
+      normalWeights[i] = weights[i] / accum;
   }
+  printf("Normal weights: ");
+  for(int i = 0; i < numColors; i++)
+    printf("%f ", normalWeights[i]);
+  puts("");
+  {
+    float accum = 0;
+    for(int i = 0; i < numColors + 1; i++)
+    {
+      colorOffsets[i] = diverged * accum;
+      if(i < numColors)
+        accum += normalWeights[i];
+    }
+  }
+  printf("Color offsets (pixels): ");
+  for(int i = 0; i < numColors + 1; i++)
+    printf("%i ", colorOffsets[i]);
+  puts("");
+  //use color offsets to map to [0, DEFAULT_CYCLE_LEN]
+  int lowerColor = 0;
   for(int i = 0; i < diverged; i++)
   {
-    if(iters[pixelList[i]] == -1)
+    if(colorOffsets[lowerColor + 1] <= i)
+      lowerColor++;
+    int origOrd = i;
+    int orig = iterbuf[pixelList[i]];
+    int mapped = DEFAULT_CYCLE_LEN * (double) (i - colorOffsets[lowerColor]) /
+                                     (colorOffsets[lowerColor + 1] - colorOffsets[lowerColor]);
+    do
     {
-      //reached the end of colored pixels, remapping done
-      break;
-    }
-    int start = i;
-    int val = iters[pixelList[start]];
-    while(iters[pixelList[i]] == val && i < w * h)
+      iterbuf[pixelList[i]] = mapped;
       i++;
-    int num = i - start;
-    int mapping = lowest + (DELTA_FACTOR * start / diverged);
-    for(int j = start; j < start + num; j++)
-      iters[pixelList[j]] = mapping;
+    }
+    while(iterbuf[pixelList[i]] == orig && i < diverged);
   }
+  free(normalWeights);
+  free(colorOffsets);
   free(pixelList);
 }
 
-static int logMap(int orig)
+void histogramFilter(int* iterbuf, int w, int h, int numColors)
 {
-  return 50.0 * log(orig + 20);
+  float* equalWeights = malloc(numColors * sizeof(float));
+  for(int i = 0; i < numColors; i++)
+    equalWeights[i] = 1;
+  histogramFilterWeighted(iterbuf, w, h, equalWeights, numColors);
+  free(equalWeights);
 }
 
-void logarithmFilter(int* iterbuf, int w, int h)
+static int floatCmp(const void* lhs, const void* rhs)
 {
-  const int desiredRange = 2000;   //2 full spectrum cycles?
-  //scan for minimum and maximum colored values
-  int lo = INT_MAX;
-  int hi = 0;
+  float l = *((float*) lhs);
+  float r = *((float*) rhs);
+  if(l < r)
+    return -1;
+  if(l > r)
+    return 1;
+  return 0;
+}
+
+float getPercentileValue(float* buf, int w, int h, float proportion)
+{
+  assert(proportion >= 0.0 && proportion < 1.0);
+  int count = 0;
   for(int i = 0; i < w * h; i++)
   {
-    int val = iterbuf[i];
-    if(val > 0)
+    if(buf[i] > 0)
     {
-      if(val < lo)
-        lo = val;
-      if(val > hi)
-        hi = val;
+      imgScratch[count++] = buf[i];
     }
   }
-  int mapLo = logMap(lo);
-  int mapHi = logMap(hi);
-  double rangeScale = (double) desiredRange / (mapHi - mapLo);
-  for(int i = 0; i < w * h; i++)
+  assert(count > 2);
+  qsort(imgScratch, count, sizeof(float), floatCmp);
+  return imgScratch[(int) (count * proportion)];
+}
+
+void colorExpoCyclic(Image* im, float expo)
+{
+  handleNonColored(im);
+  int minVal = INT_MAX;
+  for(int i = 0; i < im->w * im->h; i++)
   {
-    if(iterbuf[i] != -1)
-      iterbuf[i] = mapLo + (logMap(iterbuf[i]) - mapLo) * rangeScale;
+    if(im->iters[i] > 0 && im->iters[i] < minVal)
+      minVal = im->iters[i];
+  }
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] >= 0)
+      im->floatBuf[i] = pow(im->iters[i], expo);
+    else
+      im->floatBuf[i] = -1;
+  }
+  float cap = getPercentileValue(im->floatBuf, im->w, im->h, 0.9995);
+  //clamp values
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->floatBuf[i] >= 0 && im->floatBuf[i] > cap)
+      im->floatBuf[i] = cap;
+  }
+  float minMapped = pow(minVal, expo);
+  //scale up to reach desired color range
+  float scale = (im->period * im->cycles) / (cap - minMapped);
+  float perSegment = (float) im->period / im->numColors;
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    float val = im->floatBuf[i] * scale;
+    if(val >= 0)
+    {
+      int segment = val / perSegment;
+      float lerpK = 1 - (val - segment * perSegment) / (perSegment);
+      int lowColorIndex = segment % im->numColors;
+      int highColorIndex = (segment + 1) % im->numColors;
+      //lerp between low and high color
+      im->fb[i] = lerp(im->palette[lowColorIndex], im->palette[highColorIndex], lerpK);
+    }
   }
 }
 
-//#define EXPO_SCALE 80.0
-//#define MAP_EXPO 0.45
-
-#define EXPO_SCALE 300.0
-#define MAP_EXPO 0.2
-
-static double expoMap(double orig)
+void colorLogCyclic(Image* im)
 {
-  return EXPO_SCALE * pow(orig, MAP_EXPO);
+
 }
 
-static double invExpoMap(double orig)
+void colorHist(Image* im)
 {
-  // y = 80x^0.45
-  // y/80 = x^0.45
-  // (y/80)^(1/0.45) = (x^0.45)^(1/0.45)
-  // (y/80)^(1/0.45) = x
-  return pow(orig / EXPO_SCALE, 1.0 / MAP_EXPO);
+
 }
 
-void exponentialFilter(int* iterbuf, int w, int h)
+void colorHistWeighted(Image* im, float* weights)
 {
-  const int desiredRange = 2000;   //2 full spectrum cycles?
-  //get lowest colored value in buf
-  int lowest = INT_MAX;
-  for(int i = 0; i < w * h; i++)
-  {
-    if(iterbuf[i] >= 0 && iterbuf[i] < lowest)
-      lowest = iterbuf[i];
-  }
-  int lowmap = expoMap(lowest);
-  int cap = invExpoMap(lowmap + desiredRange);
-  for(int i = 0; i < w * h; i++)
-  {
-    if(iterbuf[i] > cap)
-      iterbuf[i] = cap;
-  }
-  for(int i = 0; i < w * h; i++)
-  {
-    if(iterbuf[i] != -1)
-      iterbuf[i] = expoMap(iterbuf[i]);
-  }
+
+}
+
+void colorExpoCyclicSmooth(Image* im, float expo)
+{
+
+}
+
+void colorLogCyclicSmooth(Image* im)
+{
+
+}
+
+void colorHistSmooth(Image* im)
+{
+  
+}
+
+void colorHistWeightedSmooth(Image* im, float* weights)
+{
+
 }

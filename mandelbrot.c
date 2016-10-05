@@ -4,6 +4,7 @@ int winw;
 int winh;
 int* iters;
 unsigned* colors;
+float* floatBuf;
 int lastOutline;
 FP targetX;
 FP targetY;
@@ -120,8 +121,6 @@ static Uint32 rainbowColors[] =
   0xFF00FFFF  //violet
 };
 
-COLOR_FUNC(rainbow, rainbowColors, 7, 1000)
-
 static Uint32 warmColors[] =
 {
   0xFF0000FF, //red
@@ -129,8 +128,6 @@ static Uint32 warmColors[] =
   0xE0E000FF, //yellow
   0xFF9000FF  //orange
 };
-
-COLOR_FUNC(warm, warmColors, 4, 1000)
 
 static Uint32 coolColors[] =
 {
@@ -141,36 +138,65 @@ static Uint32 coolColors[] =
   0x00FFA0FF  //green
 };
 
-COLOR_FUNC(cool, coolColors, 5, 1000)
-
-static Uint32 greys[] = 
+static Uint32 sunsetColors[] =
 {
-  0x202020FF,
-  0xE0E0E0FF
+  0x000000FF,   // Black
+  0x702963FF,   // Purple
+  0xC80815FF,   // Red
+  0xFF7518FF,   // Orange
+  0xFFD700FF    // Gold
 };
 
-COLOR_FUNC(greyscale, greys, 2, 1000);
-
-Uint32 getColor(int num)
+static Uint32 rgbColors[] =
 {
-  if(num == NOT_COMPUTED)
-    return 0x888888FF;
-  if(num == -1)
-    return 0x000000FF;                  //in the mandelbrot set = opaque black
-  if(num == BLANK)
-    return 0xFFFFFFFF;
-  return rainbow(num);
+  0xFF0000FF,
+  0x00FF00FF,
+  0x0000FFFF
+};
+
+static Uint32 testColors[] =
+{
+  0xFF0000FF,   // red
+  0x0000FFFF    // blue
+};
+
+static float sunsetWeights[] =
+{
+  1,
+  3,
+  2,
+  2,
+  1
+};
+
+static void colorMap()
+{
+  Image im;
+  im.iters = iters;
+  im.fb = colors;
+  im.floatBuf = floatBuf;
+  im.w = winw;
+  im.h = winh;
+  im.palette = rgbColors;
+  im.numColors = 3;
+  im.period = 100;
+  im.cycles = 5.0;
+  colorExpoCyclic(&im, 0.3);
 }
 
 void colorTestDrawBuf()
 {
-  //(1000 colors)
-  double k = 2.0 * (1000.0 / winw);
   for(int i = 0; i < winw; i++)
   {
-    Uint32 color = getColor(k * i);
     for(int j = 0; j < winh; j++)
-      colors[i + j * winw] = color;
+    {
+      iters[i + j * winw] = i;
+    }
+  }
+  colorMap();
+  for(int i = 0; i < winh; i++)
+  {
+    colors[i + i * winw] = 0xFF;
   }
 }
 
@@ -554,7 +580,6 @@ void* simd32Worker(void* unused)
       if(_mm256_testz_ps(cmp, cmp))
       {
         //all pixels have diverged: (mag < 4) false on all lanes
-        _mm256_store_si256((__m256i*) workIters, itercount);
         break;
       }
       //zr = zr^2 - zi^2 + cr
@@ -578,10 +603,77 @@ void* simd32Worker(void* unused)
         iters[i + work] = workIters[i];
     }
   }
+  return NULL;
 }
 
 void* simd64Worker(void* unused)
 {
+  double ps = getValue(&pstride);
+  __m256d four = _mm256_set1_pd(4);
+  double r0 = getValue(&targetX) - (winw / 2) * ps;
+  double i0 = getValue(&targetY) - (winh / 2) * ps;
+  double crDouble[4] __attribute__ ((aligned(32)));
+  double ciDouble[4] __attribute__ ((aligned(32)));
+  long long int workIters[4] __attribute__ ((aligned(32)));
+  while(true)
+  {
+    //get 8 pixels' worth of work and update work index simultaneously
+    //memory_order_relaxed because it doesn't matter which thread gets which work
+    int work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
+    //check for all work being done (wait for join)
+    if(work >= winw * winh)
+      return NULL;
+    for(int i = 0; i < 4; i++)
+    {
+      crDouble[i] = r0 + (ps * ((work + i) % winw));
+      ciDouble[i] = i0 + (ps * ((work + i) / winw));
+    }
+    __m256d cr = _mm256_load_pd(crDouble);
+    __m256d ci = _mm256_load_pd(ciDouble);
+    __m256d zr = _mm256_setzero_pd();
+    __m256d zi = _mm256_setzero_pd();
+    __m256i itercount = _mm256_setzero_si256();
+    for(int i = 0; i < maxiter; i++)
+    {
+      __m256d zr2 = _mm256_mul_pd(zr, zr);
+      __m256d zi2 = _mm256_mul_pd(zi, zi);
+      __m256d mag = _mm256_add_pd(zr2, zi2);
+      //compare all 8 magnitudes against 4.0 (in four)
+      //predicate 0x1: a < b
+      __m256d cmp = _mm256_cmp_pd(mag, four, 2);
+      //prepare to add 1 to each int in itercount
+      __m256i iteradd = _mm256_set1_epi64x(1);
+      //but, only add to lanes where four < mag was true
+      iteradd = _mm256_and_si256(iteradd, cmp);
+      //update itercounts
+      itercount = _mm256_add_epi32(itercount, iteradd);
+      //check for early break condition
+      if(_mm256_testz_pd(cmp, cmp))
+      {
+        //all pixels have diverged: (mag < 4) false on all lanes
+        break;
+      }
+      //zr = zr^2 - zi^2 + cr
+      __m256d zri = _mm256_mul_pd(zr, zi);
+      zr = _mm256_sub_pd(zr2, zi2);
+      zr = _mm256_add_pd(zr, cr);
+      zri = _mm256_add_pd(zri, zri);
+      zi = _mm256_add_pd(zri, ci);
+    }
+    _mm256_store_si256((__m256i*) workIters, itercount);
+    //take output from itersInt
+    for(int i = 0; i < 4; i++)
+    {
+      if(workIters[i] == maxiter)
+        workIters[i] = -1;
+    }
+    //write to iterbuf
+    for(int i = 0; i < 4; i++)
+    {
+      if(i + work < winw * winh)
+        iters[i + work] = workIters[i];
+    }
+  }
   return NULL;
 }
 
@@ -598,22 +690,36 @@ void drawBufSIMD32()
 
 void drawBufSIMD64()
 {
-
+  //reset work index (still on 1 thread, no ordering concerns)
+  atomic_store(&workerIndex, 0);
+  pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
+  for(int i = 0; i < numThreads; i++)
+    pthread_create(&threads[i], NULL, simd64Worker, NULL);
+  for(int i = 0; i < numThreads; i++)
+    pthread_join(threads[i], NULL);
 }
 
 void simpleDrawBuf()
 {
+  //machine epsilon values from wikipedia
+  const float eps32 = 5.96e-08;
+  const double eps64 = 1.11e-16;
   float ps = getValue(&pstride);
-  if(ps >= 1e-9)
+  if(ps >= eps32)
   {
+    puts("Using hardware single precision.");
     drawBufSIMD32();
+    pixelsComputed = winw * winh;
   }
-  else if(ps <= 1e-19)
+  else if(ps >= eps64)
   {
+    puts("Using hardware double precision.");
     drawBufSIMD64();
+    pixelsComputed = winw * winh;
   }
   else
   {
+    printf("Using arbitrary precision (%i bits)\n", prec * 64);
     pixelsComputed = 0;
     SimpleWorkInfo* swi = malloc(numThreads * sizeof(swi));
     pthread_t* threads = malloc(numThreads * sizeof(pthread_t));
@@ -633,12 +739,7 @@ void simpleDrawBuf()
     free(swi);
   }
   if(colors)
-  {
-    //exponentialFilter(iters, winw, winh);
-    for(int i = 0; i < winw * winh; i++)
-      colors[i] = getColor(iters[i]);
-    blockFilter(0.15, colors, winw, winh);
-  }
+    colorMap();
 }
 
 void fastDrawBuf()
@@ -650,13 +751,8 @@ void fastDrawBuf()
     iters[i] = NOT_COMPUTED;
   void* os = oscratch;
   fillAll(os);
-  exponentialFilter(iters, winw, winh);
   if(colors)
-  {
-    for(int i = 0; i < winw * winh; i++)
-      colors[i] = getColor(iters[i]);
-    blockFilter(0.1, colors, winw, winh);
-  }
+    colorMap();
   return;
   pthread_t* threads = malloc(numThreads * sizeof(pthread_t));
   for(int i = 0; i < numThreads; i++)
@@ -664,11 +760,7 @@ void fastDrawBuf()
   for(int i = 0; i < numThreads; i++)
     pthread_join(threads[i], NULL);
   if(colors)
-  {
-    exponentialFilter(iters, winw, winh);
-    for(int i = 0; i < winw * winh; i++)
-      colors[i] = getColor(iters[i]);
-  }
+    colorMap();
   free(threads);
 }
 
@@ -857,7 +949,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 void recomputeMaxIter()
 {
-  const int normalIncrease = 750 * zoomRate;
+  const int normalIncrease = 400 * zoomRate;
   maxiter += normalIncrease;
 }
 
@@ -954,21 +1046,23 @@ int main(int argc, const char** argv)
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
   prec = 1;
   zoomRate = 1;
-  iters = malloc(imageWidth * imageHeight * sizeof(int));
-  colors = malloc(imageWidth * imageHeight * sizeof(unsigned));
   winw = imageWidth;
   winh = imageHeight;
+  iters = malloc(winw * winh * sizeof(int));
+  colors = malloc(winw * winh * sizeof(unsigned));
+  floatBuf = malloc(winw * winh * sizeof(float));
+  imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 5000;
+  maxiter = 256;
   initOutlineScratch();
   filecount = 0;
   //resume file: filecount, last maxiter, prec
-  while(getApproxExpo(&pstride) >= deepestExpo)
+  while(getApproxExpo(&pstride) >= deepestExpo && filecount < 1)
   {
-    time_t start = time(NULL);
-    simpleDrawBuf();
-    //fastDrawBuf();
+    Time start = getTime();
+    //simpleDrawBuf();
+    colorTestDrawBuf();
     if(verbose)
     {
       double proportionComputed = (double) pixelsComputed / (winw * winh);
@@ -976,12 +1070,11 @@ int main(int argc, const char** argv)
         pixelsComputed, 100 * proportionComputed, 1 / proportionComputed);
     }
     writeImage();
-    return 0;
+    double dt = timeDiff(start, getTime());
     fpshrOne(pstride);
     recomputeMaxIter();
-    int timeDiff = time(NULL) - start;
-    printf("Image #%i took %i seconds (iter cap = %i).\n",
-        filecount - 1, timeDiff, maxiter);
+    printf("Image #%i took %f seconds (iter cap = %i).\n",
+        filecount - 1, dt, maxiter);
     if(upgradePrec())
     {
       INCR_PREC(pstride);
@@ -990,7 +1083,9 @@ int main(int argc, const char** argv)
         printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 64 * prec);
     }
   }
-  free(iters);
+  free(imgScratch);
+  free(floatBuf);
   free(colors);
+  free(iters);
 }
 
