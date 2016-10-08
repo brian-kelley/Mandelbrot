@@ -59,11 +59,19 @@ typedef struct
 } WorkInfo;
 
 void simpleDrawBuf();
+void fastDrawBuf();     //uses boundary + fill optimization (non-smooth only)
+
+// float
 void drawBufSIMD32();
 void* simd32Worker(void* unused);
-void* simd64Worker(void* unused);
+void* simd32WorkerSmooth(void* unused);
+// double
 void drawBufSIMD64();
-void fastDrawBuf();     //uses boundary + fill optimization
+void* simd64Worker(void* unused);
+void* simd64WorkerSmooth(void* unused);
+//arbitrary precision
+void* simpleWorkerFunc(void* wi);
+
 void colorTestDrawBuf();  //draws 2 periods of the color map as a spectrum
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
@@ -76,7 +84,6 @@ void loadResumeState(const char* fname);
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void* workerFunc(void* wi);                //pthread worker thread function
-void* simpleWorkerFunc(void* wi);                //pthread worker thread function
 //iterate z = z^2 + c, where z = x + yi, return iteration count to escape or -1 if converged
 int getPixelConvRate(int x, int y);
 //iterate z = z^2 + c, return iteration count

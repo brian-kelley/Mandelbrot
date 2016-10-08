@@ -5,6 +5,7 @@
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
 static int* _iters;
+float _expo;
 float* imgScratch;
 
 Uint32 lerp(Uint32 c1, Uint32 c2, double k)
@@ -13,33 +14,6 @@ Uint32 lerp(Uint32 c1, Uint32 c2, double k)
   double grn = ((c1 & 0xFF0000) >> 16) * k + ((c2 & 0xFF0000) >> 16) * (1 - k);
   double blu = ((c1 & 0xFF00) >> 8) * k + ((c2 & 0xFF00) >> 8) * (1 - k);
   return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
-}
-
-Uint32 getColorCyclic(int val, Uint32* colors, int numColors, int period)
-{
-  if(val == -1)
-    return 0xFF;           //converged: black
-  else if(val < 0)
-    return 0x909090FF;  //blank/invalid: grey
-  val = (val + period) % period;
-  double segsize = (double) period / numColors;
-  int seg = (double) val / segsize;
-  double k = 1.0 - fmod(val, segsize) / segsize;
-  return lerp(colors[seg], colors[(seg + 1) % numColors], k);
-}
-
-Uint32 getColorOneWay(int val, Uint32* colors, int numColors, int period)
-{
-  if(val == -1)
-    return 0xFF;           //converged: black
-  else if(val < 0)
-    return 0x909090FF;  //blank/invalid: grey
-  numColors--;
-  val = (val + period) % period;
-  double segsize = (double) period / numColors;
-  int seg = (double) val / segsize;
-  double k = 1.0 - fmod(val, segsize) / segsize;
-  return lerp(colors[seg], colors[(seg + 1)], k);
 }
 
 void blockFilter(double constant, Uint32* buf, int w, int h)
@@ -161,8 +135,105 @@ void handleNonColored(Image* im)
   }
 }
 
-void histogramFilterWeighted(int* iterbuf, int w, int h, float* weights, int numColors)
+static int floatCmp(const void* lhs, const void* rhs)
 {
+  float l = *((float*) lhs);
+  float r = *((float*) rhs);
+  if(l < r)
+    return -1;
+  if(l > r)
+    return 1;
+  return 0;
+}
+
+float getPercentileValue(float* buf, int w, int h, float proportion)
+{
+  assert(proportion >= 0.0 && proportion < 1.0);
+  int count = 0;
+  for(int i = 0; i < w * h; i++)
+  {
+    if(buf[i] > 0)
+    {
+      imgScratch[count++] = buf[i];
+    }
+  }
+  assert(count > 2);
+  qsort(imgScratch, count, sizeof(float), floatCmp);
+  int index = count * proportion;
+  if(index >= count)
+    index = count - 1;
+  return imgScratch[index];
+}
+
+static float expoMapFunc(float val)
+{
+  return pow(val, _expo) - 1;
+}
+
+static float logMapFunc(float val)
+{
+  return log(val + 20);
+}
+
+static void applyCyclicMapping(Image* im, FloatMapping func)
+{
+  handleNonColored(im);
+  int minVal = INT_MAX;
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] > 0 && im->iters[i] < minVal)
+      minVal = im->iters[i];
+  }
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] >= 0)
+      im->iters[i] = func(im->iters[i]);
+    else
+      im->iters[i] = -1.0;
+  }
+  float cap = getPercentileValue(im->iters, im->w, im->h, 0.9995);
+  //clamp values
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    if(im->iters[i] > cap)
+      im->iters[i] = cap;
+  }
+  float minMapped = func(minVal);
+  //scale up to reach desired color range
+  float scale = (im->period * im->cycles) / (cap - minMapped);
+  float perSegment = (float) im->period / im->numColors;
+  for(int i = 0; i < im->w * im->h; i++)
+  {
+    //subtract 1 so that effective min value maps to 0 (origin in color cycle)
+    float val = im->iters[i];
+    if(val >= 0)
+    {
+      float delta = (val - minMapped) * scale;
+      val = minMapped + delta;
+      int segment = val / perSegment;
+      float lerpK = 1 - (val - segment * perSegment) / perSegment;
+      int lowColorIndex = segment % im->numColors;
+      int highColorIndex = (segment + 1) % im->numColors;
+      //lerp between low and high color
+      im->fb[i] = lerp(im->palette[lowColorIndex], im->palette[highColorIndex], lerpK);
+    }
+  }
+}
+
+void colorExpoCyclic(Image* im, float expo)
+{
+  _expo = expo;
+  applyCyclicMapping(im, expoMapFunc);
+}
+
+void colorLogCyclic(Image* im)
+{
+  applyCyclicMapping(im, logMapFunc);
+}
+
+void colorHist(Image* im)
+{
+  /*
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
   _iters = iterbuf;
   int* pixelList = malloc(w * h * sizeof(int));
@@ -223,97 +294,7 @@ void histogramFilterWeighted(int* iterbuf, int w, int h, float* weights, int num
   free(normalWeights);
   free(colorOffsets);
   free(pixelList);
-}
-
-void histogramFilter(int* iterbuf, int w, int h, int numColors)
-{
-  float* equalWeights = malloc(numColors * sizeof(float));
-  for(int i = 0; i < numColors; i++)
-    equalWeights[i] = 1;
-  histogramFilterWeighted(iterbuf, w, h, equalWeights, numColors);
-  free(equalWeights);
-}
-
-static int floatCmp(const void* lhs, const void* rhs)
-{
-  float l = *((float*) lhs);
-  float r = *((float*) rhs);
-  if(l < r)
-    return -1;
-  if(l > r)
-    return 1;
-  return 0;
-}
-
-float getPercentileValue(float* buf, int w, int h, float proportion)
-{
-  assert(proportion >= 0.0 && proportion < 1.0);
-  int count = 0;
-  for(int i = 0; i < w * h; i++)
-  {
-    if(buf[i] > 0)
-    {
-      imgScratch[count++] = buf[i];
-    }
-  }
-  assert(count > 2);
-  qsort(imgScratch, count, sizeof(float), floatCmp);
-  return imgScratch[(int) (count * proportion)];
-}
-
-void colorExpoCyclic(Image* im, float expo)
-{
-  handleNonColored(im);
-  int minVal = INT_MAX;
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->iters[i] > 0 && im->iters[i] < minVal)
-      minVal = im->iters[i];
-  }
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->iters[i] >= 0)
-      im->floatBuf[i] = pow(im->iters[i], expo) - 1;
-    else
-      im->floatBuf[i] = -1;
-  }
-  float cap = getPercentileValue(im->floatBuf, im->w, im->h, 0.9995);
-  //clamp values
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->floatBuf[i] > cap)
-      im->floatBuf[i] = cap;
-  }
-  float minMapped = pow(minVal, expo) - 1;
-  //scale up to reach desired color range
-  float scale = (im->period * im->cycles) / (cap - minMapped);
-  float perSegment = (float) im->period / im->numColors;
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    //subtract 1 so that effective min value maps to 0 (origin in color cycle)
-    float val = im->floatBuf[i];
-    if(val >= 0)
-    {
-      float delta = (val - minMapped) * scale;
-      val = minMapped + delta;
-      int segment = val / perSegment;
-      float lerpK = 1 - (val - segment * perSegment) / (perSegment);
-      int lowColorIndex = segment % im->numColors;
-      int highColorIndex = (segment + 1) % im->numColors;
-      //lerp between low and high color
-      im->fb[i] = lerp(im->palette[lowColorIndex], im->palette[highColorIndex], lerpK);
-    }
-  }
-}
-
-void colorLogCyclic(Image* im)
-{
-
-}
-
-void colorHist(Image* im)
-{
-
+  */
 }
 
 void colorHistWeighted(Image* im, float* weights)

@@ -23,16 +23,17 @@ extern float* imgScratch;
 //is used by histogram colorings where range is not specified by caller
 #define DEFAULT_CYCLE_LEN 1000
 
+typedef float (*FloatMapping) (float orig);
+
 typedef struct
 {
-  int* iters;
+  float* iters;
   float* resid;      //only used by "smooth" color functions
   Uint32* fb;
   int w;
   int h;
   Uint32* palette;
   int numColors;
-  float* floatBuf;
   double cycles;     //number of repeats of the colormap in one image
   int period;
 } Image;
