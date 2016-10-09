@@ -85,10 +85,13 @@ void loadResumeState(const char* fname);
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
 void* workerFunc(void* wi);                //pthread worker thread function
 //iterate z = z^2 + c, where z = x + yi, return iteration count to escape or -1 if converged
-int getPixelConvRate(int x, int y);
+float getPixelConvRate(int x, int y);
+float getPixelConvRateSmooth(int x, int y);
 //iterate z = z^2 + c, return iteration count
-int getConvRateFP(FP* real, FP* imag);
-int getConvRateLD(long double real, long double imag);  //actually iterate z = z^2 + c, return iteration count
+float getConvRateFP(FP* real, FP* imag);
+float getConvRateFPSmooth(FP* real, FP* imag);
+float getConvRate64(double real, double imag);
+float getConvRate80(long double real, long double imag);
 bool upgradePrec();  //given pstride, does precision need to be upgraded
 
 void iteratePointQueue(Point* queue, int num);   //iterate the points in parallel

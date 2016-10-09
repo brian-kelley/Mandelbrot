@@ -181,6 +181,7 @@ static void colorMap()
   im.numColors = 7;
   im.period = 100;
   im.cycles = 1.0;
+  //colorLogCyclic(&im);
   colorExpoCyclic(&im, 0.3);
 }
 
@@ -393,7 +394,7 @@ void traceOutline(Point start, int val, OutlineScratch* os)
   }
 }
 
-int getPixelConvRate(int x, int y)
+float getPixelConvRate(int x, int y)
 {
   //printf("Getting conv rate @ %i, %i\n", x, y);
   long double tx = getValue(&targetX);
@@ -401,40 +402,21 @@ int getPixelConvRate(int x, int y)
   long double ps = getValue(&pstride);
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
-  int rv = NOT_COMPUTED;
+  float rv = NOT_COMPUTED;
   bool reflected = false;
-  if(ps >= 1e-19)
+  if(ps > 1e-20)
   {
-    //check for reflection across y = 0
-    //if viewport contains the line y = 0...
-    long double r = ps * (x - winw / 2) + tx;
-    long double i = ps * (y - winh / 2) + ty;
-    if(fabsl(ty) < ps * (winh / 2))
-    {
-      //get reflected pixel y for current point
-      //first need number of pixels between this pixel and y = 0
-      int dy = i / ps;
-      int mirroredY = y - 2 * dy;
-      //if mirrored position is in bounds, can copy the pixel
-      if(mirroredY >= 0 && mirroredY < winh)
-      {
-        int mirrori = x + mirroredY * winw;
-        if(iters[mirrori] != NOT_COMPUTED)
-        {
-          rv = iters[mirrori];
-          //reflected = true;
-        }
-      }
-    }
-    if(!reflected)
-    {
-      rv = getConvRateLD(r, i);
-      pixelsComputed++;
-    }
+    //single pixel, double prec
+    rv = getConvRate64(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
+  }
+  else if(ps > 1e-30)
+  {
+    //single pixel, extended double prec
+    rv = getConvRate80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
   {
-    //convert x, y to offsets rel. to viewport center
+    //single pixel, arb. precision
     MAKE_STACK_FP(r);
     MAKE_STACK_FP(i);
     MAKE_STACK_FP(temp);
@@ -450,12 +432,56 @@ int getPixelConvRate(int x, int y)
     fpadd2(&i, &temp);
     rv = getConvRateFP(&r, &i);
     pixelsComputed++;
+    iters[x + y * winw] = rv;
   }
-  iters[x + y * winw] = rv;
   return rv;
+};
+
+float getConvRate64(double cr, double ci)
+{
+  int iter = 0;
+  double zr = 0;
+  double zi = 0;
+  double zri, zr2, zi2, mag;
+  for(; iter < maxiter; iter++)
+  {
+    zr2 = zr * zr;
+    zi2 = zi * zi;
+    zri = 2 * zr * zi;
+    mag = zr2 + zi2;
+    if(mag >= 4)
+    {
+      break;
+    }
+    zr = zr2 - zi2 + cr;
+    zi = zri + ci;
+  }
+  return iter == maxiter ? -1 : iter;
 }
 
-int getConvRateFP(FP* real, FP* imag)
+float getConvRate80(long double cr, long double ci)
+{
+  int iter = 0;
+  double zr = 0;
+  double zi = 0;
+  double zri, zr2, zi2, mag;
+  for(; iter < maxiter; iter++)
+  {
+    zr2 = zr * zr;
+    zi2 = zi * zi;
+    zri = 2 * zr * zi;
+    mag = zr2 + zi2;
+    if(mag >= 4)
+    {
+      break;
+    }
+    zr = zr2 - zi2 + cr;
+    zi = zri + ci;
+  }
+  return iter == maxiter ? -1 : iter;
+}
+
+float getConvRateFP(FP* real, FP* imag)
 {
   //real, imag make up "c" in z = z^2 + c
   assert(real->value.size == prec && imag->value.size == prec);
@@ -487,35 +513,49 @@ int getConvRateFP(FP* real, FP* imag)
   return iter == maxiter ? -1 : iter;
 }
 
-int getConvRateLD(long double real, long double imag)
+float getConvRateFPSmooth(FP* real, FP* imag)
 {
-  long double zr = 0;
-  long double zi = 0;
-  long double zrsquare, zisquare, zri, mag;
-  int iter = 0;
-  for(; iter < maxiter; iter++)
+  //real, imag make up "c" in z = z^2 + c
+  assert(real->value.size == prec && imag->value.size == prec);
+  MAKE_STACK_FP(four);
+  loadValue(&four, 4);
+  MAKE_STACK_FP(zr);
+  loadValue(&zr, 0);
+  MAKE_STACK_FP(zi);
+  loadValue(&zi, 0);
+  MAKE_STACK_FP(zrsquare);
+  MAKE_STACK_FP(zisquare);
+  MAKE_STACK_FP(zri);
+  MAKE_STACK_FP(mag);
+  for(int iter = 0; iter < maxiter; iter++)
   {
-    zrsquare = zr * zr;
-    zisquare = zi * zi;
-    zri = 2.0 * zr * zi;
+    fpmul3(&zrsquare, &zr, &zr);
+    fpmul3(&zisquare, &zi, &zi);
+    fpmul3(&zri, &zr, &zi);
     //want 2 * zr * zi
-    zr = zrsquare - zisquare;
-    zr += real;
-    zi = zri + imag;
-    mag = zrsquare + zisquare;
-    if(mag >= 4.0)
-      break;
+    fpshlOne(zri);
+    fpsub3(&zr, &zrsquare, &zisquare);
+    fpadd2(&zr, real);
+    fpadd3(&zi, &zri, imag);
+    fpadd3(&mag, &zrsquare, &zisquare);
+    if(mag.value.val[0] >= four.value.val[0])
+    {
+      return (float) iter + 1 - log(log(sqrt(getValue(&mag)))) / M_LN2;
+    }
   }
-  return iter == maxiter ? -1 : iter;
+  //did not diverge
+  return -1.0f;
 }
 
-void* simpleWorkerFunc(void* wi)
+void* simpleWorkerFunc(void* unused)
 {
-  SimpleWorkInfo* swi = (SimpleWorkInfo*) wi;
-  for(int i = swi->start; i < swi->start + swi->n; i++)
+  while(true)
   {
-    iters[i] = NOT_COMPUTED;
-    getPixelConvRate(i % winw, i / winw);
+    int work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
+    if(work >= winw * winh)
+      break;
+    iters[work] = NOT_COMPUTED;
+    getPixelConvRate(work % winw, work / winw);
   }
   return NULL;
 }
@@ -705,7 +745,8 @@ void* simd32WorkerSmooth(void* unused)
     __m256 zi = _mm256_setzero_ps();
     __m256i itercount = _mm256_setzero_si256();
     __m256 savedCmp = _mm256_setzero_ps();
-    float resid[8] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
+    float realFinal[8] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
+    float imagFinal[8] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
     for(int i = 0; i < maxiter; i++)
     {
       __m256 zr2 = _mm256_mul_ps(zr, zr);
@@ -718,8 +759,9 @@ void* simd32WorkerSmooth(void* unused)
       savedCmp = cmp;
       if(!_mm256_testz_ps(newDivergedMask, newDivergedMask))
       {
-        //have a newly diverged point, do a masked write to the resid array
-        _mm256_maskstore_ps(resid, newDivergedMask, mag);
+        //have a newly diverged point, do a masked write to the resid arrays
+        _mm256_maskstore_ps(realFinal, newDivergedMask, zr);
+        _mm256_maskstore_ps(imagFinal, newDivergedMask, zi);
       }
       //prepare to add 1 to each int in itercount
       __m256i iteradd = _mm256_set1_epi32(1);
@@ -754,9 +796,27 @@ void* simd32WorkerSmooth(void* unused)
       if(i + work < winw * winh)
       {
         if(workIters[i] == -1)
+        {
           iters[i + work] = -1.0f;
+        }
         else
-          iters[i + work] = workIters[i] + 1 - logf(logf(sqrtf(resid[i]))) / M_LN2;
+        {
+          //iterate n more times to reduce error of smooth coloring formula
+          const int n = 2;
+          float zr = realFinal[i];
+          float zi = imagFinal[i];
+          float zr2, zi2, zri;
+          for(int j = 0; j < n; j++)
+          {
+            zr2 = zr * zr;
+            zi2 = zi * zi;
+            zri = 2 * zr * zi;
+            zr = zr2 - zi2 + crFloat[i];
+            zi = zri + ciFloat[i];
+          }
+          float finalMag = sqrt(zr * zr + zi * zi);
+          iters[i + work] = workIters[i] + n + 1 - logl(logl(finalMag)) / M_LN2;
+        }
       }
     }
   }
