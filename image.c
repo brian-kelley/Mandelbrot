@@ -148,7 +148,7 @@ static int floatCmp(const void* lhs, const void* rhs)
 
 float getPercentileValue(float* buf, int w, int h, float proportion)
 {
-  assert(proportion >= 0.0 && proportion < 1.0);
+  assert(proportion >= 0.0);
   int count = 0;
   for(int i = 0; i < w * h; i++)
   {
@@ -191,7 +191,7 @@ static void applyCyclicMapping(Image* im, FloatMapping func)
     else
       im->iters[i] = -1.0;
   }
-  float cap = getPercentileValue(im->iters, im->w, im->h, 0.9995);
+  float cap = getPercentileValue(im->iters, im->w, im->h, 1);
   //clamp values
   for(int i = 0; i < im->w * im->h; i++)
   {

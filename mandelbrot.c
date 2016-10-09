@@ -802,7 +802,7 @@ void* simd32WorkerSmooth(void* unused)
         else
         {
           //iterate n more times to reduce error of smooth coloring formula
-          const int n = 2;
+          const int n = 4;
           float zr = realFinal[i];
           float zi = imagFinal[i];
           float zr2, zi2, zri;
@@ -851,7 +851,8 @@ void* simd64WorkerSmooth(void* unused)
     __m256d zi = _mm256_setzero_pd();
     __m256i itercount = _mm256_setzero_si256();
     __m256 savedCmp = _mm256_setzero_pd();
-    double resid[4] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
+    double realFinal[4] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
+    double imagFinal[4] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
     for(int i = 0; i < maxiter; i++)
     {
       __m256d zr2 = _mm256_mul_pd(zr, zr);
@@ -865,7 +866,8 @@ void* simd64WorkerSmooth(void* unused)
       if(!_mm256_testz_pd(newDivergedMask, newDivergedMask))
       {
         //have a newly diverged point, do a masked write to the resid array
-        _mm256_maskstore_pd(resid, newDivergedMask, mag);
+        _mm256_maskstore_pd(realFinal, newDivergedMask, zr);
+        _mm256_maskstore_pd(imagFinal, newDivergedMask, zi);
       }
       //prepare to add 1 to each int in itercount
       __m256i iteradd = _mm256_set1_epi64x(1);
@@ -902,7 +904,22 @@ void* simd64WorkerSmooth(void* unused)
         if(workIters[i] == -1)
           iters[i + work] = -1.0f;
         else
-          iters[i + work] = workIters[i] + 1 - log(log(sqrt(resid[i]))) / M_LN2;
+        {
+          const int n = 4;
+          double zr = realFinal[i];
+          double zi = imagFinal[i];
+          double zr2, zi2, zri;
+          for(int j = 0; j < n; j++)
+          {
+            zr2 = zr * zr;
+            zi2 = zi * zi;
+            zri = 2 * zr * zi;
+            zr = zr2 - zi2 + crDouble[i];
+            zi = zri + ciDouble[i];
+          }
+          double finalMag = sqrt(zr * zr + zi * zi);
+          iters[i + work] = workIters[i] + n + 1 - logl(logl(finalMag)) / M_LN2;
+        }
       }
     }
   }
@@ -952,8 +969,8 @@ void drawBufSIMD64()
 void simpleDrawBuf()
 {
   //machine epsilon values from wikipedia
-  const float eps32 = 5.96e-08;
-  const double eps64 = 1.11e-16;
+  const float eps32 = 1e-07;
+  const double eps64 = 1e-15;
   float ps = getValue(&pstride);
   if(ps >= eps32)
   {
