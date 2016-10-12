@@ -23,12 +23,11 @@ extern float* imgScratch;
 //is used by histogram colorings where range is not specified by caller
 #define DEFAULT_CYCLE_LEN 1000
 
-typedef float (*FloatMapping) (float orig);
+typedef double (*Mapping) (double orig);
 
 typedef struct
 {
   float* iters;
-  float* resid;      //only used by "smooth" color functions
   Uint32* fb;
   int w;
   int h;
@@ -55,14 +54,10 @@ float getPercentileValue(float* buf, int w, int h, float proportion);
 // Banded or smooth
 // Non-weighted or weighted
 
-void colorExpoCyclic(Image* im, float expo);
+void colorExpoCyclic(Image* im, double expo);
 void colorLogCyclic(Image* im);
 void colorHist(Image* im);
-void colorHistWeighted(Image* im, float* weights);
-void colorExpoCyclicSmooth(Image* im, float expo);
-void colorLogCyclicSmooth(Image* im);
-void colorHistSmooth(Image* im);
-void colorHistWeightedSmooth(Image* im, float* weights);
+void colorHistWeighted(Image* im, double* weights);
 
 #endif
 

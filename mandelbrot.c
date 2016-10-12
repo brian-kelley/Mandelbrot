@@ -161,13 +161,12 @@ static Uint32 testColors[] =
   0x0000FFFF    // blue
 };
 
-static float sunsetWeights[] =
+static double sunsetWeights[] =
 {
+  2,
+  2,
   1,
-  3,
-  2,
-  2,
-  1
+  0.2
 };
 
 static void colorMap()
@@ -177,12 +176,15 @@ static void colorMap()
   im.fb = colors;
   im.w = winw;
   im.h = winh;
-  im.palette = rainbowColors;
-  im.numColors = 7;
+  im.palette = sunsetColors;
+  im.numColors = 5;
   im.period = 100;
-  im.cycles = 1.0;
-  //colorLogCyclic(&im);
-  colorExpoCyclic(&im, 0.3);
+  //im.cycles = 1.0;
+  //colorHist(&im);
+
+  // NOTE: weights array has length nColors - 1
+  // because weights apply to range between two colors
+  colorHistWeighted(&im, sunsetWeights);
 }
 
 void colorTestDrawBuf()

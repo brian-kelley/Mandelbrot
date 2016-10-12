@@ -4,15 +4,15 @@
 #define GET_G(px) (((px) & 0xFF0000) >> 16)
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
-static int* _iters;
-float _expo;
+static float* _iters;
+static float _expo;
 float* imgScratch;
 
 Uint32 lerp(Uint32 c1, Uint32 c2, double k)
 {
-  double red = ((c1 & 0xFF000000) >> 24) * k + ((c2 & 0xFF000000) >> 24) * (1 - k);
-  double grn = ((c1 & 0xFF0000) >> 16) * k + ((c2 & 0xFF0000) >> 16) * (1 - k);
-  double blu = ((c1 & 0xFF00) >> 8) * k + ((c2 & 0xFF00) >> 8) * (1 - k);
+  double red = ((c1 & 0xFF000000) >> 24) * (1 - k) + ((c2 & 0xFF000000) >> 24) * k;
+  double grn = ((c1 & 0xFF0000) >> 16) * (1 - k) + ((c2 & 0xFF0000) >> 16) * k;
+  double blu = ((c1 & 0xFF00) >> 8) * (1 - k) + ((c2 & 0xFF00) >> 8) * k;
   return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
 }
 
@@ -109,13 +109,13 @@ void reduceIters(int* iterbuf, int diffCap, int w, int h)
 //comparator returns -1 if lhs < rhs, 1 if lhs > rhs
 static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 {
-  int lhs = _iters[*((int*) lhsRaw)];
-  int rhs = _iters[*((int*) rhsRaw)];
+  float lhs = _iters[*((int*) lhsRaw)];
+  float rhs = _iters[*((int*) rhsRaw)];
   if(lhs == rhs)
     return 0;
-  if(lhs == -1)
+  if(lhs < 0)
     return 1;
-  if(rhs == -1)
+  if(rhs < 0)
     return -1;
   if(lhs < rhs)
     return -1;
@@ -165,17 +165,17 @@ float getPercentileValue(float* buf, int w, int h, float proportion)
   return imgScratch[index];
 }
 
-static float expoMapFunc(float val)
+static double expoMapFunc(double val)
 {
   return pow(val, _expo) - 1;
 }
 
-static float logMapFunc(float val)
+static double logMapFunc(double val)
 {
   return log(val + 20);
 }
 
-static void applyCyclicMapping(Image* im, FloatMapping func)
+static void applyCyclicMapping(Image* im, Mapping func)
 {
   handleNonColored(im);
   int minVal = INT_MAX;
@@ -191,27 +191,27 @@ static void applyCyclicMapping(Image* im, FloatMapping func)
     else
       im->iters[i] = -1.0;
   }
-  float cap = getPercentileValue(im->iters, im->w, im->h, 1);
+  double cap = getPercentileValue(im->iters, im->w, im->h, 1);
   //clamp values
   for(int i = 0; i < im->w * im->h; i++)
   {
     if(im->iters[i] > cap)
       im->iters[i] = cap;
   }
-  float minMapped = func(minVal);
+  double minMapped = func(minVal);
   //scale up to reach desired color range
-  float scale = (im->period * im->cycles) / (cap - minMapped);
-  float perSegment = (float) im->period / im->numColors;
+  double scale = (im->period * im->cycles) / (cap - minMapped);
+  double perSegment = (double) im->period / im->numColors;
   for(int i = 0; i < im->w * im->h; i++)
   {
     //subtract 1 so that effective min value maps to 0 (origin in color cycle)
-    float val = im->iters[i];
+    double val = im->iters[i];
     if(val >= 0)
     {
-      float delta = (val - minMapped) * scale;
+      double delta = (val - minMapped) * scale;
       val = minMapped + delta;
       int segment = val / perSegment;
-      float lerpK = 1 - (val - segment * perSegment) / perSegment;
+      double lerpK = (val - segment * perSegment) / perSegment;
       int lowColorIndex = segment % im->numColors;
       int highColorIndex = (segment + 1) % im->numColors;
       //lerp between low and high color
@@ -220,7 +220,7 @@ static void applyCyclicMapping(Image* im, FloatMapping func)
   }
 }
 
-void colorExpoCyclic(Image* im, float expo)
+void colorExpoCyclic(Image* im, double expo)
 {
   _expo = expo;
   applyCyclicMapping(im, expoMapFunc);
@@ -233,91 +233,53 @@ void colorLogCyclic(Image* im)
 
 void colorHist(Image* im)
 {
-  /*
+  //temporary equal weights for all colors, then do weighted hist coloring
+  double* weights = alloca(im->numColors * sizeof(double));
+  for(int i = 0; i < im->numColors; i++)
+    weights[i] = 1;
+  colorHistWeighted(im, weights);
+}
+
+void colorHistWeighted(Image* im, double* weights)
+{
+  handleNonColored(im);
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
-  _iters = iterbuf;
-  int* pixelList = malloc(w * h * sizeof(int));
-  for(int i = 0; i < w * h; i++)
+  _iters = im->iters;
+  int* pixelList = malloc(im->w * im->h * sizeof(int));
+  for(int i = 0; i < im->w * im->h; i++)
     pixelList[i] = i;
   //sort pixelList (iters indices) according to the iter values
-  qsort(pixelList, w * h, sizeof(int), pixelCompare);
+  qsort(pixelList, im->w * im->h, sizeof(int), pixelCompare);
   //get # of diverged pixels
-  int diverged = w * h;
-  while(iterbuf[pixelList[diverged - 1]] == -1)
+  int diverged = im->w * im->h;
+  while(im->iters[pixelList[diverged - 1]] == -1)
     diverged--;
-  int* colorOffsets = malloc((numColors + 1) * sizeof(int));
-  printf("Raw weights: ");
-  for(int i = 0; i < numColors; i++)
-    printf("%f ", weights[i]);
-  float* normalWeights = malloc(numColors * sizeof(float));
+  int* colorOffsets = alloca(im->numColors * sizeof(int));
+  double* normalWeights = alloca(im->numColors * sizeof(double));
+  double accum = 0;
+  //divide each color weight by sum of all weights
+  for(int i = 0; i < im->numColors - 1; i++)
+    accum += weights[i];
+  for(int i = 0; i < im->numColors - 1; i++)
+    normalWeights[i] = weights[i] / accum;
+  normalWeights[im->numColors] = 1;
+  //determine number of pixels in each "segment"
+  accum = 0;
+  for(int i = 0; i < im->numColors; i++)
   {
-    float accum = 0;
-    for(int i = 0; i < numColors; i++)
-      accum += weights[i];
-    for(int i = 0; i < numColors; i++)
-      normalWeights[i] = weights[i] / accum;
+    colorOffsets[i] = diverged * accum;
+    accum += normalWeights[i];
   }
-  printf("Normal weights: ");
-  for(int i = 0; i < numColors; i++)
-    printf("%f ", normalWeights[i]);
-  puts("");
-  {
-    float accum = 0;
-    for(int i = 0; i < numColors + 1; i++)
-    {
-      colorOffsets[i] = diverged * accum;
-      if(i < numColors)
-        accum += normalWeights[i];
-    }
-  }
-  printf("Color offsets (pixels): ");
-  for(int i = 0; i < numColors + 1; i++)
-    printf("%i ", colorOffsets[i]);
-  puts("");
-  //use color offsets to map to [0, DEFAULT_CYCLE_LEN]
   int lowerColor = 0;
   for(int i = 0; i < diverged; i++)
   {
-    if(colorOffsets[lowerColor + 1] <= i)
+    while(colorOffsets[lowerColor + 1] <= i)
       lowerColor++;
-    int origOrd = i;
-    int orig = iterbuf[pixelList[i]];
-    int mapped = DEFAULT_CYCLE_LEN * (double) (i - colorOffsets[lowerColor]) /
-                                     (colorOffsets[lowerColor + 1] - colorOffsets[lowerColor]);
-    do
-    {
-      iterbuf[pixelList[i]] = mapped;
-      i++;
-    }
-    while(iterbuf[pixelList[i]] == orig && i < diverged);
+    int colorLo = colorOffsets[lowerColor];
+    int colorHi = colorOffsets[lowerColor + 1];
+    im->fb[pixelList[i]] = lerp(im->palette[lowerColor], im->palette[lowerColor + 1],
+        (double) (i - colorLo) / (colorHi - colorLo));
   }
-  free(normalWeights);
-  free(colorOffsets);
   free(pixelList);
-  */
 }
 
-void colorHistWeighted(Image* im, float* weights)
-{
-
-}
-
-void colorExpoCyclicSmooth(Image* im, float expo)
-{
-
-}
-
-void colorLogCyclicSmooth(Image* im)
-{
-
-}
-
-void colorHistSmooth(Image* im)
-{
-  
-}
-
-void colorHistWeightedSmooth(Image* im, float* weights)
-{
-
-}
