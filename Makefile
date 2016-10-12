@@ -2,7 +2,7 @@ CFLAGS=-std=c11 -Ofast -march=native -mtune=native -ffast-math -fomit-frame-poin
 DEBUGFLAGS=-std=c11 -g
 FASTCFLAGS=-std=c11 -O0
 SIMDFLAGS=-msse -msse2 -msse3 -mavx -mavx2
-SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c timing.c lodepng.c
+SOURCES=mandelbrot.c bigint.c fixedpoint.c image.c timing.c kernels.c lodepng.c
 
 all:
 	nasm -f macho64 routines.asm -o routines.o

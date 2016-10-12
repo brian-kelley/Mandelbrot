@@ -5,15 +5,18 @@
 #include <assert.h>
 #include <stdatomic.h>
 #include "pthread.h"
+#include "kernels.h"
 #include "lodepng.h"
 #include "fixedpoint.h"
 #include "image.h"
 #include "timing.h"
 #include "complex.h"
 #include "x86intrin.h"
-#include "immintrin.h"
 
 #define CRASH(msg) {printf("Error: " msg " in file " __FILE__ ", line %i\n", __LINE__); exit(1);}
+
+extern int maxiter;
+extern int prec;
 
 enum
 {
@@ -52,23 +55,15 @@ typedef struct
   int n;
 } SimpleWorkInfo;
 
-typedef struct
-{
-  //need an atomic int32 for the current work index
-  int pad;
-} WorkInfo;
-
 void simpleDrawBuf();
 void fastDrawBuf();     //uses boundary + fill optimization (non-smooth only)
 
 // float
 void drawBufSIMD32();
 void* simd32Worker(void* unused);
-void* simd32WorkerSmooth(void* unused);
 // double
 void drawBufSIMD64();
 void* simd64Worker(void* unused);
-void* simd64WorkerSmooth(void* unused);
 //arbitrary precision
 void* simpleWorkerFunc(void* wi);
 
@@ -83,15 +78,10 @@ void loadResumeState(const char* fname);
 
 /* Low level main loop functions */
 Uint32 getColor(int num);   //lookup color corresponding to the iteration count of a pixel
-void* workerFunc(void* wi);                //pthread worker thread function
 //iterate z = z^2 + c, where z = x + yi, return iteration count to escape or -1 if converged
 float getPixelConvRate(int x, int y);
 float getPixelConvRateSmooth(int x, int y);
 //iterate z = z^2 + c, return iteration count
-float getConvRateFP(FP* real, FP* imag);
-float getConvRateFPSmooth(FP* real, FP* imag);
-float getConvRate64(double real, double imag);
-float getConvRate80(long double real, long double imag);
 bool upgradePrec();  //given pstride, does precision need to be upgraded
 
 void iteratePointQueue(Point* queue, int num);   //iterate the points in parallel

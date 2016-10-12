@@ -407,12 +407,18 @@ float getPixelConvRate(int x, int y)
   if(ps > 1e-20)
   {
     //single pixel, double prec
-    rv = getConvRate64(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
+    if(smooth)
+      rv = escapeTime64Smooth(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
+    else
+      rv = escapeTime64(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else if(ps > 1e-30)
   {
     //single pixel, extended double prec
-    rv = getConvRate80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
+    if(smooth)
+      rv = escapeTime80Smooth(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
+    else
+      rv = escapeTime80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
   {
@@ -430,122 +436,16 @@ float getPixelConvRate(int x, int y)
     fpmul2(&i, &temp);
     fpcopy(&temp, &targetY);
     fpadd2(&i, &temp);
-    rv = getConvRateFP(&r, &i);
+    if(smooth)
+      rv = escapeTimeFPSmooth(&r, &i);
+    else
+      rv = escapeTimeFP(&r, &i);
     pixelsComputed++;
     iters[x + y * winw] = rv;
   }
   return rv;
 };
 
-float getConvRate64(double cr, double ci)
-{
-  int iter = 0;
-  double zr = 0;
-  double zi = 0;
-  double zri, zr2, zi2, mag;
-  for(; iter < maxiter; iter++)
-  {
-    zr2 = zr * zr;
-    zi2 = zi * zi;
-    zri = 2 * zr * zi;
-    mag = zr2 + zi2;
-    if(mag >= 4)
-    {
-      break;
-    }
-    zr = zr2 - zi2 + cr;
-    zi = zri + ci;
-  }
-  return iter == maxiter ? -1 : iter;
-}
-
-float getConvRate80(long double cr, long double ci)
-{
-  int iter = 0;
-  double zr = 0;
-  double zi = 0;
-  double zri, zr2, zi2, mag;
-  for(; iter < maxiter; iter++)
-  {
-    zr2 = zr * zr;
-    zi2 = zi * zi;
-    zri = 2 * zr * zi;
-    mag = zr2 + zi2;
-    if(mag >= 4)
-    {
-      break;
-    }
-    zr = zr2 - zi2 + cr;
-    zi = zri + ci;
-  }
-  return iter == maxiter ? -1 : iter;
-}
-
-float getConvRateFP(FP* real, FP* imag)
-{
-  //real, imag make up "c" in z = z^2 + c
-  assert(real->value.size == prec && imag->value.size == prec);
-  MAKE_STACK_FP(four);
-  loadValue(&four, 4);
-  MAKE_STACK_FP(zr);
-  loadValue(&zr, 0);
-  MAKE_STACK_FP(zi);
-  loadValue(&zi, 0);
-  MAKE_STACK_FP(zrsquare);
-  MAKE_STACK_FP(zisquare);
-  MAKE_STACK_FP(zri);
-  MAKE_STACK_FP(mag);
-  int iter = 0;
-  for(; iter < maxiter; iter++)
-  {
-    fpmul3(&zrsquare, &zr, &zr);
-    fpmul3(&zisquare, &zi, &zi);
-    fpmul3(&zri, &zr, &zi);
-    //want 2 * zr * zi
-    fpshlOne(zri);
-    fpsub3(&zr, &zrsquare, &zisquare);
-    fpadd2(&zr, real);
-    fpadd3(&zi, &zri, imag);
-    fpadd3(&mag, &zrsquare, &zisquare);
-    if(mag.value.val[0] >= four.value.val[0])
-      break;
-  }
-  return iter == maxiter ? -1 : iter;
-}
-
-float getConvRateFPSmooth(FP* real, FP* imag)
-{
-  //real, imag make up "c" in z = z^2 + c
-  assert(real->value.size == prec && imag->value.size == prec);
-  MAKE_STACK_FP(four);
-  loadValue(&four, 4);
-  MAKE_STACK_FP(zr);
-  loadValue(&zr, 0);
-  MAKE_STACK_FP(zi);
-  loadValue(&zi, 0);
-  MAKE_STACK_FP(zrsquare);
-  MAKE_STACK_FP(zisquare);
-  MAKE_STACK_FP(zri);
-  MAKE_STACK_FP(mag);
-  for(int iter = 0; iter < maxiter; iter++)
-  {
-    fpmul3(&zrsquare, &zr, &zr);
-    fpmul3(&zisquare, &zi, &zi);
-    fpmul3(&zri, &zr, &zi);
-    //want 2 * zr * zi
-    fpshlOne(zri);
-    fpsub3(&zr, &zrsquare, &zisquare);
-    fpadd2(&zr, real);
-    fpadd3(&zi, &zri, imag);
-    fpadd3(&mag, &zrsquare, &zisquare);
-    if(mag.value.val[0] >= four.value.val[0])
-    {
-      return (float) iter + 1 - log(log(sqrt(getValue(&mag)))) / M_LN2;
-    }
-  }
-  //did not diverge
-  return -1.0f;
-}
 
 void* simpleWorkerFunc(void* unused)
 {
@@ -560,30 +460,14 @@ void* simpleWorkerFunc(void* unused)
   return NULL;
 }
 
-void* workerFunc(void* wiRaw)
-{
-  /*
-     WorkInfo* wi = (WorkInfo*) wiRaw;
-     MAKE_STACK_FP(pixFloat);
-     MAKE_STACK_FP(x);
-     MAKE_STACK_FP(yiter);
-     MAKE_STACK_FP(pstrideLocal);
-     fpcopy(&pstrideLocal, &pstride);
-     for(int i = 0; i < wi->numPoints; i++)
-     getPixelConvRate(wi->points[i].x, wi->points[i].y);
-     */
-  return NULL;
-}
-
 void* simd32Worker(void* unused)
 {
   float ps = getValue(&pstride);
-  __m256 four = _mm256_set1_ps(4);
   float r0 = getValue(&targetX) - (winw / 2) * ps;
   float i0 = getValue(&targetY) - (winh / 2) * ps;
   float crFloat[8] __attribute__ ((aligned(32)));
   float ciFloat[8] __attribute__ ((aligned(32)));
-  int workIters[8] __attribute__ ((aligned(32)));
+  float output[8];
   while(true)
   {
     //get 8 pixels' worth of work and update work index simultaneously
@@ -597,50 +481,14 @@ void* simd32Worker(void* unused)
       crFloat[i] = r0 + (ps * ((work + i) % winw));
       ciFloat[i] = i0 + (ps * ((work + i) / winw));
     }
-    __m256 cr = _mm256_load_ps(crFloat);
-    __m256 ci = _mm256_load_ps(ciFloat);
-    __m256 zr = _mm256_setzero_ps();
-    __m256 zi = _mm256_setzero_ps();
-    __m256i itercount = _mm256_setzero_si256();
-    for(int i = 0; i < maxiter; i++)
-    {
-      __m256 zr2 = _mm256_mul_ps(zr, zr);
-      __m256 zi2 = _mm256_mul_ps(zi, zi);
-      __m256 mag = _mm256_add_ps(zr2, zi2);
-      //compare all 8 magnitudes against 4.0 (in four)
-      //predicate 0x1: a < b
-      __m256 cmp = _mm256_cmp_ps(mag, four, 2);
-      //prepare to add 1 to each int in itercount
-      __m256i iteradd = _mm256_set1_epi32(1);
-      //but, only add to lanes where four < mag was true
-      iteradd = _mm256_and_si256(iteradd, cmp);
-      //update itercounts
-      itercount = _mm256_add_epi32(itercount, iteradd);
-      //check for early break condition
-      if(_mm256_testz_ps(cmp, cmp))
-      {
-        //all pixels have diverged: (mag < 4) false on all lanes
-        break;
-      }
-      //zr = zr^2 - zi^2 + cr
-      __m256 zri = _mm256_mul_ps(zr, zi);
-      zr = _mm256_sub_ps(zr2, zi2);
-      zr = _mm256_add_ps(zr, cr);
-      zri = _mm256_add_ps(zri, zri);
-      zi = _mm256_add_ps(zri, ci);
-    }
-    _mm256_store_si256((__m256i*) workIters, itercount);
-    //take output from itersInt
+    if(smooth)
+      escapeTimeVec32Smooth(output, crFloat, ciFloat);
+    else
+      escapeTimeVec32(output, crFloat, ciFloat);
     for(int i = 0; i < 8; i++)
     {
-      if(workIters[i] == maxiter)
-        workIters[i] = -1;
-    }
-    //write to iterbuf
-    for(int i = 0; i < 8; i++)
-    {
-      if(i + work < winw * winh)
-        iters[i + work] = workIters[i];
+      if(work + i < winw * winh)
+        iters[work + i] = output[i];
     }
   }
   return NULL;
@@ -649,12 +497,11 @@ void* simd32Worker(void* unused)
 void* simd64Worker(void* unused)
 {
   double ps = getValue(&pstride);
-  __m256d four = _mm256_set1_pd(4);
   double r0 = getValue(&targetX) - (winw / 2) * ps;
   double i0 = getValue(&targetY) - (winh / 2) * ps;
   double crDouble[4] __attribute__ ((aligned(32)));
   double ciDouble[4] __attribute__ ((aligned(32)));
-  long long int workIters[4] __attribute__ ((aligned(32)));
+  float output[4];
   while(true)
   {
     //get 8 pixels' worth of work and update work index simultaneously
@@ -667,260 +514,6 @@ void* simd64Worker(void* unused)
     {
       crDouble[i] = r0 + (ps * ((work + i) % winw));
       ciDouble[i] = i0 + (ps * ((work + i) / winw));
-    }
-    __m256d cr = _mm256_load_pd(crDouble);
-    __m256d ci = _mm256_load_pd(ciDouble);
-    __m256d zr = _mm256_setzero_pd();
-    __m256d zi = _mm256_setzero_pd();
-    __m256i itercount = _mm256_setzero_si256();
-    for(int i = 0; i < maxiter; i++)
-    {
-      __m256d zr2 = _mm256_mul_pd(zr, zr);
-      __m256d zi2 = _mm256_mul_pd(zi, zi);
-      __m256d mag = _mm256_add_pd(zr2, zi2);
-      //compare all 8 magnitudes against 4.0 (in four)
-      //predicate 0x1: a < b
-      __m256d cmp = _mm256_cmp_pd(mag, four, 2);
-      //prepare to add 1 to each int in itercount
-      __m256i iteradd = _mm256_set1_epi64x(1);
-      //but, only add to lanes where four < mag was true
-      iteradd = _mm256_and_si256(iteradd, cmp);
-      //update itercounts
-      itercount = _mm256_add_epi32(itercount, iteradd);
-      //check for early break condition
-      if(_mm256_testz_pd(cmp, cmp))
-      {
-        //all pixels have diverged: (mag < 4) false on all lanes
-        break;
-      }
-      //zr = zr^2 - zi^2 + cr
-      __m256d zri = _mm256_mul_pd(zr, zi);
-      zr = _mm256_sub_pd(zr2, zi2);
-      zr = _mm256_add_pd(zr, cr);
-      zri = _mm256_add_pd(zri, zri);
-      zi = _mm256_add_pd(zri, ci);
-    }
-    _mm256_store_si256((__m256i*) workIters, itercount);
-    //take output from itersInt
-    for(int i = 0; i < 4; i++)
-    {
-      if(workIters[i] == maxiter)
-        workIters[i] = -1;
-    }
-    //write to iterbuf
-    for(int i = 0; i < 4; i++)
-    {
-      if(i + work < winw * winh)
-        iters[i + work] = workIters[i];
-    }
-  }
-  return NULL;
-}
-
-void* simd32WorkerSmooth(void* unused)
-{
-  float ps = getValue(&pstride);
-  __m256 four = _mm256_set1_ps(4);
-  float r0 = getValue(&targetX) - (winw / 2) * ps;
-  float i0 = getValue(&targetY) - (winh / 2) * ps;
-  float crFloat[8] __attribute__ ((aligned(32)));
-  float ciFloat[8] __attribute__ ((aligned(32)));
-  int workIters[8] __attribute__ ((aligned(32)));
-  while(true)
-  {
-    //get 8 pixels' worth of work and update work index simultaneously
-    //memory_order_relaxed because it doesn't matter which thread gets which work
-    int work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
-    //check for all work being done (wait for join)
-    if(work >= winw * winh)
-      return NULL;
-    for(int i = 0; i < 8; i++)
-    {
-      crFloat[i] = r0 + (ps * ((work + i) % winw));
-      ciFloat[i] = i0 + (ps * ((work + i) / winw));
-    }
-    __m256 cr = _mm256_load_ps(crFloat);
-    __m256 ci = _mm256_load_ps(ciFloat);
-    __m256 zr = _mm256_setzero_ps();
-    __m256 zi = _mm256_setzero_ps();
-    __m256i itercount = _mm256_setzero_si256();
-    __m256 savedCmp = _mm256_setzero_ps();
-    float realFinal[8] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
-    float imagFinal[8] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
-    for(int i = 0; i < maxiter; i++)
-    {
-      __m256 zr2 = _mm256_mul_ps(zr, zr);
-      __m256 zi2 = _mm256_mul_ps(zi, zi);
-      __m256 mag = _mm256_add_ps(zr2, zi2);
-      //compare all 8 magnitudes against 4.0 (in four)
-      //predicate 0x1: a < b
-      __m256 cmp = _mm256_cmp_ps(mag, four, 2);
-      __m256 newDivergedMask = _mm256_xor_ps(cmp, savedCmp);
-      savedCmp = cmp;
-      if(!_mm256_testz_ps(newDivergedMask, newDivergedMask))
-      {
-        //have a newly diverged point, do a masked write to the resid arrays
-        _mm256_maskstore_ps(realFinal, newDivergedMask, zr);
-        _mm256_maskstore_ps(imagFinal, newDivergedMask, zi);
-      }
-      //prepare to add 1 to each int in itercount
-      __m256i iteradd = _mm256_set1_epi32(1);
-      //but, only add to lanes where four < mag was true
-      iteradd = _mm256_and_si256(iteradd, cmp);
-      //update itercounts
-      itercount = _mm256_add_epi32(itercount, iteradd);
-      //check for early break condition
-      if(_mm256_testz_ps(cmp, cmp))
-      {
-        //all pixels have diverged: (mag < 4) false on all lanes
-        break;
-      }
-      //zr = zr^2 - zi^2 + cr
-      __m256 zri = _mm256_mul_ps(zr, zi);
-      zr = _mm256_sub_ps(zr2, zi2);
-      zr = _mm256_add_ps(zr, cr);
-      zri = _mm256_add_ps(zri, zri);
-      zi = _mm256_add_ps(zri, ci);
-    }
-    _mm256_store_si256((__m256i*) workIters, itercount);
-    //take output from itersInt
-    for(int i = 0; i < 8; i++)
-    {
-      if(workIters[i] == maxiter)
-        workIters[i] = -1;
-    }
-    //write to iterbuf, and apply resid (for diverged pixels)
-    for(int i = 0; i < 8; i++)
-    {
-      //printf("resid[%i] = %f\n", i, resid[i]);
-      if(i + work < winw * winh)
-      {
-        if(workIters[i] == -1)
-        {
-          iters[i + work] = -1.0f;
-        }
-        else
-        {
-          //iterate n more times to reduce error of smooth coloring formula
-          const int n = 4;
-          float zr = realFinal[i];
-          float zi = imagFinal[i];
-          float zr2, zi2, zri;
-          for(int j = 0; j < n; j++)
-          {
-            zr2 = zr * zr;
-            zi2 = zi * zi;
-            zri = 2 * zr * zi;
-            zr = zr2 - zi2 + crFloat[i];
-            zi = zri + ciFloat[i];
-          }
-          float finalMag = sqrt(zr * zr + zi * zi);
-          iters[i + work] = workIters[i] + n + 1 - logl(logl(finalMag)) / M_LN2;
-        }
-      }
-    }
-  }
-  return NULL;
-}
-
-void* simd64WorkerSmooth(void* unused)
-{
-  double ps = getValue(&pstride);
-  __m256d four = _mm256_set1_pd(4);
-  double r0 = getValue(&targetX) - (winw / 2) * ps;
-  double i0 = getValue(&targetY) - (winh / 2) * ps;
-  double crDouble[4] __attribute__ ((aligned(32)));
-  double ciDouble[4] __attribute__ ((aligned(32)));
-  long long int workIters[4] __attribute__ ((aligned(32)));
-  while(true)
-  {
-    //get 8 pixels' worth of work and update work index simultaneously
-    //memory_order_relaxed because it doesn't matter which thread gets which work
-    int work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
-    //check for all work being done (wait for join)
-    if(work >= winw * winh)
-      return NULL;
-    for(int i = 0; i < 4; i++)
-    {
-      crDouble[i] = r0 + (ps * ((work + i) % winw));
-      ciDouble[i] = i0 + (ps * ((work + i) / winw));
-    }
-    __m256d cr = _mm256_load_pd(crDouble);
-    __m256d ci = _mm256_load_pd(ciDouble);
-    __m256d zr = _mm256_setzero_pd();
-    __m256d zi = _mm256_setzero_pd();
-    __m256i itercount = _mm256_setzero_si256();
-    __m256 savedCmp = _mm256_setzero_pd();
-    double realFinal[4] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
-    double imagFinal[4] __attribute__ ((aligned(32)));   //mag - 4 on the escape iteration
-    for(int i = 0; i < maxiter; i++)
-    {
-      __m256d zr2 = _mm256_mul_pd(zr, zr);
-      __m256d zi2 = _mm256_mul_pd(zi, zi);
-      __m256d mag = _mm256_add_pd(zr2, zi2);
-      //compare all 8 magnitudes against 4.0 (in four)
-      //predicate 0x1: a < b
-      __m256d cmp = _mm256_cmp_pd(mag, four, 2);
-      __m256 newDivergedMask = _mm256_xor_pd(cmp, savedCmp);
-      savedCmp = cmp;
-      if(!_mm256_testz_pd(newDivergedMask, newDivergedMask))
-      {
-        //have a newly diverged point, do a masked write to the resid array
-        _mm256_maskstore_pd(realFinal, newDivergedMask, zr);
-        _mm256_maskstore_pd(imagFinal, newDivergedMask, zi);
-      }
-      //prepare to add 1 to each int in itercount
-      __m256i iteradd = _mm256_set1_epi64x(1);
-      //but, only add to lanes where four < mag was true
-      iteradd = _mm256_and_si256(iteradd, cmp);
-      //update itercounts
-      itercount = _mm256_add_epi32(itercount, iteradd);
-      //check for early break condition
-      if(_mm256_testz_pd(cmp, cmp))
-      {
-        //all pixels have diverged: (mag < 4) false on all lanes
-        break;
-      }
-      //zr = zr^2 - zi^2 + cr
-      __m256d zri = _mm256_mul_pd(zr, zi);
-      zr = _mm256_sub_pd(zr2, zi2);
-      zr = _mm256_add_pd(zr, cr);
-      zri = _mm256_add_pd(zri, zri);
-      zi = _mm256_add_pd(zri, ci);
-    }
-    _mm256_store_si256((__m256i*) workIters, itercount);
-    //take output from itersInt
-    for(int i = 0; i < 4; i++)
-    {
-      if(workIters[i] == maxiter)
-        workIters[i] = -1;
-    }
-    //write to iterbuf
-    for(int i = 0; i < 4; i++)
-    {
-      //printf("resid[%i] = %f\n", i, resid[i]);
-      if(i + work < winw * winh)
-      {
-        if(workIters[i] == -1)
-          iters[i + work] = -1.0f;
-        else
-        {
-          const int n = 4;
-          double zr = realFinal[i];
-          double zi = imagFinal[i];
-          double zr2, zi2, zri;
-          for(int j = 0; j < n; j++)
-          {
-            zr2 = zr * zr;
-            zi2 = zi * zi;
-            zri = 2 * zr * zi;
-            zr = zr2 - zi2 + crDouble[i];
-            zi = zri + ciDouble[i];
-          }
-          double finalMag = sqrt(zr * zr + zi * zi);
-          iters[i + work] = workIters[i] + n + 1 - logl(logl(finalMag)) / M_LN2;
-        }
-      }
     }
   }
   return NULL;
@@ -933,16 +526,8 @@ void drawBufSIMD32()
   //to avoid clogging SIMD unit with hyperthreads
   atomic_store(&workerIndex, 0);
   pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-  if(smooth)
-  {
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simd32WorkerSmooth, NULL);
-  }
-  else
-  {
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simd32Worker, NULL);
-  }
+  for(int i = 0; i < numThreads; i++)
+    pthread_create(&threads[i], NULL, simd32Worker, NULL);
   for(int i = 0; i < numThreads; i++)
     pthread_join(threads[i], NULL);
 }
@@ -952,16 +537,8 @@ void drawBufSIMD64()
   //reset work index (still on 1 thread, no ordering concerns)
   atomic_store(&workerIndex, 0);
   pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-  if(smooth)
-  {
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simd64WorkerSmooth, NULL);
-  }
-  else
-  {
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simd64Worker, NULL);
-  }
+  for(int i = 0; i < numThreads; i++)
+    pthread_create(&threads[i], NULL, simd64Worker, NULL);
   for(int i = 0; i < numThreads; i++)
     pthread_join(threads[i], NULL);
 }
@@ -994,12 +571,7 @@ void simpleDrawBuf()
     for(int i = 0; i < totalWork; i++)
       iters[i] = NOT_COMPUTED;
     for(int i = 0; i < numThreads; i++)
-    {
-      swi[i].start = i * (totalWork / numThreads);
-      swi[i].n = (i + 1) * (totalWork / numThreads) - swi[i].start;
-    }
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simpleWorkerFunc, &swi[i]);
+      pthread_create(&threads[i], NULL, simpleWorkerFunc, NULL);
     for(int i = 0; i < numThreads; i++)
       pthread_join(threads[i], NULL);
     free(threads);
