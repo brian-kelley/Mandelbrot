@@ -15,7 +15,7 @@
 #include "complex.h"
 #include "x86intrin.h"
 
-void simpleDrawBuf();
+void drawBuf();
 
 // float
 void drawBufSIMD32();
@@ -24,7 +24,7 @@ void* simd32Worker(void* unused);
 void drawBufSIMD64();
 void* simd64Worker(void* unused);
 //arbitrary precision
-void* simpleWorkerFunc(void* wi);
+void* fpWorker(void* wi);
 
 void colorTestDrawBuf();  //draws 2 periods of the color map as a spectrum
 

@@ -1,15 +1,12 @@
 #ifndef KERNELS_H
 #define KERNELS_H
 
-#include <stdlib.h>
-#include <math.h>
-#include <assert.h>
+#include "constants.h"
+#include "math.h"
+#include "assert.h"
 #include "fixedpoint.h"
 #include "image.h"
 #include "x86intrin.h"
-
-extern int maxiter;
-extern int prec;
 
 //Given integer escape time, c and z, get smooth (continuous) escape time
 float smoothEscapeTime(float iters, double zr, double zi, double cr, double ci);

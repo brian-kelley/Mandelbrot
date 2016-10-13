@@ -129,7 +129,7 @@ float getPixelConvRate(int x, int y)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
   bool reflected = false;
-  if(ps > 1e-20)
+  if(ps > 1e-15)
   {
     //single pixel, double prec
     if(smooth)
@@ -137,7 +137,7 @@ float getPixelConvRate(int x, int y)
     else
       rv = escapeTime64(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
-  else if(ps > 1e-30)
+  else if(ps > 1e-19)
   {
     //single pixel, extended double prec
     if(smooth)
@@ -166,12 +166,12 @@ float getPixelConvRate(int x, int y)
     else
       rv = escapeTimeFP(&r, &i);
     pixelsComputed++;
-    iters[x + y * winw] = rv;
   }
+  iters[x + y * winw] = rv;
   return rv;
 }
 
-void* simpleWorkerFunc(void* unused)
+void* fpWorker(void* unused)
 {
   while(true)
   {
@@ -312,64 +312,28 @@ void* simd64Worker(void* unused)
   return NULL;
 }
 
-void drawBufSIMD32()
+void drawBuf()
 {
-  //reset work index (still on 1 thread, no ordering concerns)
-  //TODO: Do something with thread-core affinity
-  //to avoid clogging SIMD unit with hyperthreads
-  atomic_store(&workerIndex, 0);
-  pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-  for(int i = 0; i < numThreads; i++)
-    pthread_create(&threads[i], NULL, simd32Worker, NULL);
-  for(int i = 0; i < numThreads; i++)
-    pthread_join(threads[i], NULL);
-}
-
-void drawBufSIMD64()
-{
-  //reset work index (still on 1 thread, no ordering concerns)
-  atomic_store(&workerIndex, 0);
-  pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-  for(int i = 0; i < numThreads; i++)
-    pthread_create(&threads[i], NULL, simd64Worker, NULL);
-  for(int i = 0; i < numThreads; i++)
-    pthread_join(threads[i], NULL);
-}
-
-void simpleDrawBuf()
-{
+  workerIndex = 0;
   //machine epsilon values from wikipedia
   const float eps32 = 1e-07;
   const double eps64 = 1e-15;
   float ps = getValue(&pstride);
+  void* (*workerFunc)(void*) = fpWorker;
   if(ps >= eps32)
   {
-    if(verbose)
-      puts("Using hardware single precision.");
-    drawBufSIMD32();
-    pixelsComputed = winw * winh;
+    workerFunc = simd32Worker;
   }
   else if(ps >= eps64)
   {
-    if(verbose)
-      puts("Using hardware double precision.");
-    drawBufSIMD64();
-    pixelsComputed = winw * winh;
+    workerFunc = simd64Worker;
   }
-  else
-  {
-    if(verbose)
-      printf("Using arbitrary precision (%i bits)\n", prec * 64);
-    pixelsComputed = 0;
-    pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-    int totalWork = winw * winh;
-    for(int i = 0; i < totalWork; i++)
-      iters[i] = NOT_COMPUTED;
-    for(int i = 0; i < numThreads; i++)
-      pthread_create(&threads[i], NULL, simpleWorkerFunc, NULL);
-    for(int i = 0; i < numThreads; i++)
-      pthread_join(threads[i], NULL);
-  }
+  pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
+  for(int i = 0; i < numThreads; i++)
+    pthread_create(&threads[i], NULL, workerFunc, NULL);
+  for(int i = 0; i < numThreads; i++)
+    pthread_join(threads[i], NULL);
+  pixelsComputed = winw * winh;
   if(colors)
     colorMap();
 }
@@ -416,7 +380,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     }
     for(int i = 0; i < gpx * gpx; i++)
       iters[i] = NOT_COMPUTED;
-    simpleDrawBuf();
+    drawBuf();
     if(verbose)
     {
       puts("**********The buffer:**********");
@@ -678,7 +642,7 @@ int main(int argc, const char** argv)
   while(getApproxExpo(&pstride) >= deepestExpo)
   {
     Time start = getTime();
-    simpleDrawBuf();
+    drawBuf();
     writeImage();
     /*
     if(verbose)

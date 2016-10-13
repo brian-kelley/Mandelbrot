@@ -4,7 +4,6 @@
 #define GET_G(px) (((px) & 0xFF0000) >> 16)
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
-static float* _iters;
 static float _expo;
 float* imgScratch;
 
@@ -109,8 +108,8 @@ void reduceIters(int* iterbuf, int diffCap, int w, int h)
 //comparator returns -1 if lhs < rhs, 1 if lhs > rhs
 static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 {
-  float lhs = _iters[*((int*) lhsRaw)];
-  float rhs = _iters[*((int*) rhsRaw)];
+  float lhs = iters[*((int*) lhsRaw)];
+  float rhs = iters[*((int*) rhsRaw)];
   if(lhs == rhs)
     return 0;
   if(lhs < 0)
@@ -243,7 +242,6 @@ void colorHist(Image* im)
 void colorHistWeighted(Image* im, double* weights)
 {
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
-  _iters = im->iters;
   int* pixelList = (int*) imgScratch;
   for(int i = 0; i < im->w * im->h; i++)
     pixelList[i] = i;
