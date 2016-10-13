@@ -15,25 +15,44 @@ int prec;
 int deepestExpo;
 bool smooth;
 bool verbose;
+bool supersample;
 int zoomRate;
 int pixelsComputed;
 OutlineScratch* oscratch;
+const char* outputDir;
 
-//Fetch + add to get next work unit
+// Fetch + add to get next work unit
+// Set to 0 by main thread at frame start
 _Atomic int workerIndex;
 
 #define NOT_COMPUTED -2
 #define BLANK -3
 #define OUTSIDE_IMAGE -4
 
+// How many points with high iter value to choose in getInterestingLocation
+// frame, which are then selected among randomly to get next frame's center
 #define GIL_CANDIDATES 2
 
+//gives pretty good values even for bad rand
 #define mrand (rand() >> 4)
+
+float ssValue(float* outputs)
+{
+  float rv = outputs[0];
+  for(int i = 1; i < 4; i++)
+  {
+    if((rv < 0 && outputs[i] > 0) || (rv > 0 && outputs[i] > 0 && outputs[i] < rv))
+    {
+      rv = outputs[i];
+    }
+  }
+  return rv;
+}
 
 void writeImage()
 {
-  char name[32];
-  sprintf(name, "output/mandel%i.png", filecount++);
+  char name[256];
+  sprintf(name, "%s/mandel%i.png", outputDir, filecount++);
   for(int i = 0; i < winw * winh; i++)
   {
     Uint32 temp = colors[i]; 
@@ -179,9 +198,7 @@ static void colorMap()
   im.palette = sunsetColors;
   im.numColors = 5;
   im.period = 100;
-  //im.cycles = 1.0;
-  //colorHist(&im);
-
+  im.cycles = 1;
   // NOTE: weights array has length nColors - 1
   // because weights apply to range between two colors
   colorHistWeighted(&im, sunsetWeights);
@@ -197,10 +214,6 @@ void colorTestDrawBuf()
     }
   }
   colorMap();
-  for(int i = 0; i < winh; i++)
-  {
-    colors[i + i * winw] = 0xFF;
-  }
 }
 
 bool inBounds(Point p)
@@ -472,25 +485,61 @@ void* simd32Worker(void* unused)
   float output[8];
   while(true)
   {
-    //get 8 pixels' worth of work and update work index simultaneously
-    //memory_order_relaxed because it doesn't matter which thread gets which work
-    int work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
-    //check for all work being done (wait for join)
-    if(work >= winw * winh)
-      return NULL;
-    for(int i = 0; i < 8; i++)
+    if(!supersample)
     {
-      crFloat[i] = r0 + (ps * ((work + i) % winw));
-      ciFloat[i] = i0 + (ps * ((work + i) / winw));
+      //get 8 pixels' worth of work
+      //note: memory_order_relaxed because it doesn't matter which thread gets which work
+      int work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
+      //check for all work being done (wait for join)
+      if(work >= winw * winh)
+        return NULL;
+      for(int i = 0; i < 8; i++)
+      {
+        crFloat[i] = r0 + (ps * ((work + i) % winw));
+        ciFloat[i] = i0 + (ps * ((work + i) / winw));
+      }
+      if(smooth)
+        escapeTimeVec32Smooth(output, crFloat, ciFloat);
+      else
+        escapeTimeVec32(output, crFloat, ciFloat);
+      for(int i = 0; i < 8; i++)
+      {
+        if(work + i < winw * winh)
+        {
+          iters[work + i] = output[i];
+        }
+      }
     }
-    if(smooth)
-      escapeTimeVec32Smooth(output, crFloat, ciFloat);
     else
-      escapeTimeVec32(output, crFloat, ciFloat);
-    for(int i = 0; i < 8; i++)
     {
-      if(work + i < winw * winh)
-        iters[work + i] = output[i];
+      //get 2 pixels' worth of work, which is 8 iteration points
+      int work = atomic_fetch_add_explicit(&workerIndex, 2, memory_order_relaxed);
+      if(work >= winw * winh)
+        return NULL;
+      for(int i = 0; i < 2; i++)
+      {
+        //get pixel center
+        float realBase = r0 + (ps * ((work + i) % winw));
+        float imagBase = i0 + (ps * ((work + i) / winw));
+        int offset = i * 4;
+        crFloat[offset + 0] = realBase - ps / 4;
+        crFloat[offset + 2] = crFloat[offset + 0];
+        crFloat[offset + 1] = realBase + ps / 4;
+        crFloat[offset + 3] = crFloat[offset + 1];
+        ciFloat[offset + 0] = imagBase - ps / 4;
+        ciFloat[offset + 1] = ciFloat[offset + 0];
+        ciFloat[offset + 2] = imagBase + ps / 4;
+        ciFloat[offset + 3] = ciFloat[offset + 2];
+      }
+      if(smooth)
+        escapeTimeVec32Smooth(output, crFloat, ciFloat);
+      else
+        escapeTimeVec32(output, crFloat, ciFloat);
+      for(int i = 0; i < 2; i++)
+      {
+        if(work + i < winw * winh)
+          iters[work + i] = ssValue(output + 4 * i);
+      }
     }
   }
   return NULL;
@@ -506,16 +555,49 @@ void* simd64Worker(void* unused)
   float output[4];
   while(true)
   {
-    //get 8 pixels' worth of work and update work index simultaneously
-    //memory_order_relaxed because it doesn't matter which thread gets which work
-    int work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
-    //check for all work being done (wait for join)
-    if(work >= winw * winh)
-      return NULL;
-    for(int i = 0; i < 4; i++)
+    if(!supersample)
     {
-      crDouble[i] = r0 + (ps * ((work + i) % winw));
-      ciDouble[i] = i0 + (ps * ((work + i) / winw));
+      //get 8 pixels' worth of work and update work index simultaneously
+      //memory_order_relaxed because it doesn't matter which thread gets which work
+      int work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
+      //check for all work being done (wait for join)
+      if(work >= winw * winh)
+        return NULL;
+      for(int i = 0; i < 4; i++)
+      {
+        crDouble[i] = r0 + (ps * ((work + i) % winw));
+        ciDouble[i] = i0 + (ps * ((work + i) / winw));
+      }
+      if(!smooth)
+        escapeTimeVec64(output, crDouble, ciDouble);
+      else
+        escapeTimeVec64Smooth(output, crDouble, ciDouble);
+      for(int i = 0; i < 4; i++)
+      {
+        if(work + i < winw * winh)
+          iters[work + i] = output[i];
+      }
+    }
+    else
+    {
+      int work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
+      if(work >= winw * winh)
+        return NULL;
+      double realBase = r0 + (ps * (work % winw));
+      double imagBase = i0 + (ps * (work / winw));
+      crDouble[0] = realBase - ps / 4;
+      crDouble[2] = crDouble[0];
+      crDouble[1] = realBase + ps / 4;
+      crDouble[3] = crDouble[1];
+      ciDouble[0] = imagBase - ps / 4;
+      ciDouble[1] = ciDouble[0];
+      ciDouble[2] = imagBase + ps / 4;
+      ciDouble[3] = ciDouble[2];
+      if(!smooth)
+        escapeTimeVec64(output, crDouble, ciDouble);
+      else
+        escapeTimeVec64Smooth(output, crDouble, ciDouble);
+      iters[work] = ssValue(output);
     }
   }
   return NULL;
@@ -567,8 +649,7 @@ void simpleDrawBuf()
   {
     printf("Using arbitrary precision (%i bits)\n", prec * 64);
     pixelsComputed = 0;
-    SimpleWorkInfo* swi = malloc(numThreads * sizeof(swi));
-    pthread_t* threads = malloc(numThreads * sizeof(pthread_t));
+    pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
     int totalWork = winw * winh;
     for(int i = 0; i < totalWork; i++)
       iters[i] = NOT_COMPUTED;
@@ -576,8 +657,6 @@ void simpleDrawBuf()
       pthread_create(&threads[i], NULL, simpleWorkerFunc, NULL);
     for(int i = 0; i < numThreads; i++)
       pthread_join(threads[i], NULL);
-    free(threads);
-    free(swi);
   }
   if(colors)
     colorMap();
@@ -817,7 +896,9 @@ int main(int argc, const char** argv)
   int imageWidth = defaultWidth;
   int imageHeight = defaultHeight;
   const char* resumeFile = NULL;
+  outputDir = "output";
   smooth = false;
+  supersample = false;
   verbose = false;
   deepestExpo = -300;
   int seed = 0;
@@ -859,6 +940,10 @@ int main(int argc, const char** argv)
       sscanf(argv[++i], "%i", &seed);
     else if(strcmp(argv[i], "--smooth") == 0)
       smooth = true;
+    else if(strcmp(argv[i], "--output") == 0)
+      outputDir = argv[++i];
+    else if(strcmp(argv[i], "--supersample") == 0)
+      supersample = true;
     else if(strcmp(argv[i], "--position") == 0)
     {
       customPosition = true;
@@ -905,13 +990,15 @@ int main(int argc, const char** argv)
   {
     Time start = getTime();
     simpleDrawBuf();
+    writeImage();
+    /*
     if(verbose)
     {
       double proportionComputed = (double) pixelsComputed / (winw * winh);
       printf("Iterated %i pixels (%.1f%%), %.1fx speedup\n",
         pixelsComputed, 100 * proportionComputed, 1 / proportionComputed);
     }
-    writeImage();
+    */
     double dt = timeDiff(start, getTime());
     fpshrOne(pstride);
     recomputeMaxIter();

@@ -2,11 +2,6 @@
 
 float smoothEscapeTime(float intIters, double zr, double zi, double cr, double ci)
 {
-  assert(!isnan(intIters));
-  assert(!isnan(zr));
-  assert(!isnan(zi));
-  assert(!isnan(cr));
-  assert(!isnan(ci));
   if(intIters == -1)
     return -1;
   const int n = 5;

@@ -242,10 +242,9 @@ void colorHist(Image* im)
 
 void colorHistWeighted(Image* im, double* weights)
 {
-  handleNonColored(im);
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
   _iters = im->iters;
-  int* pixelList = malloc(im->w * im->h * sizeof(int));
+  int* pixelList = (int*) imgScratch;
   for(int i = 0; i < im->w * im->h; i++)
     pixelList[i] = i;
   //sort pixelList (iters indices) according to the iter values
@@ -271,15 +270,18 @@ void colorHistWeighted(Image* im, double* weights)
     accum += normalWeights[i];
   }
   int lowerColor = 0;
+  int firstOfValue = 0; //index of first first pixel encountered with ith value
   for(int i = 0; i < diverged; i++)
   {
-    while(colorOffsets[lowerColor + 1] <= i)
+    if(im->iters[pixelList[i]] != im->iters[pixelList[firstOfValue]])
+      firstOfValue = i;
+    while(colorOffsets[lowerColor + 1] <= firstOfValue)
       lowerColor++;
     int colorLo = colorOffsets[lowerColor];
     int colorHi = colorOffsets[lowerColor + 1];
     im->fb[pixelList[i]] = lerp(im->palette[lowerColor], im->palette[lowerColor + 1],
-        (double) (i - colorLo) / (colorHi - colorLo));
+        (double) (firstOfValue - colorLo) / (colorHi - colorLo));
   }
-  free(pixelList);
+  handleNonColored(im);
 }
 

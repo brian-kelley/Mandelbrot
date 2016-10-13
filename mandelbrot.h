@@ -95,6 +95,7 @@ int getPixelNoCompute(Point p);
 //trace boundary of shape; precondition: start point is an upper-left corner
 void traceOutline(Point start, int val, OutlineScratch* pbuf);
 bool inBounds(Point p);
+float ssValue(float* outputs);
 
 void floodFill(Point p, int val, Point* stack);
 void initOutlineScratch();
