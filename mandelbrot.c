@@ -638,6 +638,20 @@ int main(int argc, const char** argv)
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
   maxiter = 256;
   filecount = 0;
+  const int imgSkip = 50;
+  for(int i = 0; i < imgSkip; i++)
+  {
+    fpshrOne(pstride);
+    recomputeMaxIter();
+    if(upgradePrec())
+    {
+      INCR_PREC(pstride);
+      prec++;
+      if(verbose)
+        printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 64 * prec);
+    }
+    filecount++;
+  }
   //resume file: filecount, last maxiter, prec
   while(getApproxExpo(&pstride) >= deepestExpo)
   {

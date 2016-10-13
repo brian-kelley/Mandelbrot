@@ -2,7 +2,7 @@
 
 float smoothEscapeTime(float intIters, double zr, double zi, double cr, double ci)
 {
-  if(intIters == -1)
+  if(intIters == -1 || intIters == maxiter)
     return -1;
   const int n = 5;
   double zr2, zi2, zri;
@@ -55,7 +55,6 @@ float escapeTimeFP(FP* real, FP* imag)
 float escapeTimeFPSmooth(FP* real, FP* imag)
 {
   //real, imag make up "c" in z = z^2 + c
-  assert(real->value.size == prec && imag->value.size == prec);
   MAKE_STACK_FP(four);
   loadValue(&four, 4);
   MAKE_STACK_FP(zr);
@@ -66,7 +65,8 @@ float escapeTimeFPSmooth(FP* real, FP* imag)
   MAKE_STACK_FP(zisquare);
   MAKE_STACK_FP(zri);
   MAKE_STACK_FP(mag);
-  for(int iter = 0; iter < maxiter; iter++)
+  int iter;
+  for(iter = 0; iter < maxiter; iter++)
   {
     fpmul3(&zrsquare, &zr, &zr);
     fpmul3(&zisquare, &zi, &zi);
@@ -79,11 +79,11 @@ float escapeTimeFPSmooth(FP* real, FP* imag)
     fpadd3(&mag, &zrsquare, &zisquare);
     if(mag.value.val[0] >= four.value.val[0])
     {
-      return smoothEscapeTime(iter, getValue(&zr), getValue(&zi), getValue(real), getValue(imag));
+      break;
     }
   }
   //did not diverge
-  return -1;
+  return smoothEscapeTime(iter, getValue(&zr), getValue(&zi), getValue(real), getValue(imag));
 }
 
 float escapeTime64(double cr, double ci)
