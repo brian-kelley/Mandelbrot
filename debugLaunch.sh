@@ -1,2 +1,2 @@
 #!/bin/bash
-lldb build/Mandelbrot -- build/Mandelbrot -n 1 --size 1280x720 --usetargetcache --targetcache target2.bin --depth -300 --verbose --seed 42
+lldb build/Mandelbrot -- -n 4 --size 320x200 --smooth --depth -300 --targetcache target2.bin --usetargetcache

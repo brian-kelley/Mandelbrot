@@ -128,7 +128,6 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
-  bool reflected = false;
   if(ps > 1e-15)
   {
     //single pixel, double prec
@@ -148,25 +147,129 @@ float getPixelConvRate(int x, int y)
   else
   {
     //single pixel, arb. precision
-    MAKE_STACK_FP(r);
-    MAKE_STACK_FP(i);
+    MAKE_STACK_FP(cr);
+    MAKE_STACK_FP(ci);
     MAKE_STACK_FP(temp);
-    fpcopy(&r, &pstride);
+    fpcopy(&cr, &pstride);
     loadValue(&temp, x - winw / 2);
-    fpmul2(&r, &temp);
+    fpmul2(&cr, &temp);
     fpcopy(&temp, &targetX);
-    fpadd2(&r, &temp);
-    fpcopy(&i, &pstride);
+    fpadd2(&cr, &temp);
+    fpcopy(&ci, &pstride);
     loadValue(&temp, y - winh / 2);
-    fpmul2(&i, &temp);
+    fpmul2(&ci, &temp);
     fpcopy(&temp, &targetY);
-    fpadd2(&i, &temp);
+    fpadd2(&ci, &temp);
     if(smooth)
-      rv = escapeTimeFPSmooth(&r, &i);
+      rv = escapeTimeFPSmooth(&cr, &ci);
     else
-      rv = escapeTimeFP(&r, &i);
+      rv = escapeTimeFP(&cr, &ci);
     pixelsComputed++;
   }
+  iters[x + y * winw] = rv;
+  return rv;
+}
+
+float getPixelConvRateSS(int x, int y)
+{
+  //printf("Getting conv rate @ %i, %i\n", x, y);
+  long double tx = getValue(&targetX);
+  long double ty = getValue(&targetY);
+  long double ps = getValue(&pstride);
+  if(iters[x + y * winw] != NOT_COMPUTED)
+    return iters[x + y * winw];
+  float rv = NOT_COMPUTED;
+  float output[4];
+  if(ps > 1e-15)
+  {
+    double r0 = tx + ps * (x - winw / 2);
+    double i0 = ty + ps * (y - winh / 2);
+    double cr[4] __attribute__ ((aligned(32)));
+    double ci[4] __attribute__ ((aligned(32)));
+    cr[0] = r0 - ps / 4;
+    cr[2] = cr[0];
+    cr[1] = r0 + ps / 4;
+    cr[3] = cr[1];
+    ci[0] = i0 - ps / 4;
+    ci[1] = ci[0];
+    ci[2] = i0 + ps / 4;
+    ci[3] = ci[2];
+    if(!smooth)
+      escapeTimeVec64(output, cr, ci);
+    else
+      escapeTimeVec64Smooth(output, cr, ci);
+  }
+  else if(ps > 1e-19)
+  {
+    long double r0 = tx + ps * (x - winw / 2);
+    long double i0 = ty + ps * (y - winh / 2);
+    long double cr[8];
+    long double ci[8];
+    cr[0] = r0 - ps / 4;
+    cr[2] = cr[0];
+    cr[1] = r0 + ps / 4;
+    cr[3] = cr[1];
+    ci[0] = i0 - ps / 4;
+    ci[1] = ci[0];
+    ci[2] = i0 + ps / 4;
+    ci[3] = ci[2];
+    if(!smooth)
+    {
+      for(int i = 0; i < 4; i++)
+        output[i] = escapeTime80(cr[i], ci[i]);
+    }
+    else
+    {
+      for(int i = 0; i < 4; i++)
+        output[i] = escapeTime80Smooth(cr[i], ci[i]);
+    }
+  }
+  else
+  {
+    //single pixel, arb. precision
+    MAKE_STACK_FP(cr);
+    MAKE_STACK_FP(ci);
+    MAKE_STACK_FP(temp);
+    fpcopy(&cr, &pstride);
+    loadValue(&temp, x - winw / 2);
+    fpmul2(&cr, &temp);
+    fpcopy(&temp, &targetX);
+    fpadd2(&cr, &temp);
+    fpcopy(&ci, &pstride);
+    loadValue(&temp, y - winh / 2);
+    fpmul2(&ci, &temp);
+    fpcopy(&temp, &targetY);
+    fpadd2(&ci, &temp);
+    //have ci, cr and temp space
+    //set temp to ps / 4
+    fpcopy(&temp, &pstride);
+    fpshr(temp, 2);
+    fpsub2(&cr, &temp);
+    fpsub2(&ci, &temp);
+    if(!smooth)
+      output[0] = escapeTimeFP(&cr, &ci);
+    else
+      output[0] = escapeTimeFPSmooth(&cr, &ci);
+    fpcopy(&temp, &pstride);
+    fpshr(temp, 1);
+    fpadd2(&cr, &temp);
+    if(!smooth)
+      output[1] = escapeTimeFP(&cr, &ci);
+    else
+      output[1] = escapeTimeFPSmooth(&cr, &ci);
+    fpadd2(&ci, &temp);
+    if(!smooth)
+      output[2] = escapeTimeFP(&cr, &ci);
+    else
+      output[2] = escapeTimeFPSmooth(&cr, &ci);
+    fpsub2(&cr, &temp);
+    if(!smooth)
+      output[3] = escapeTimeFP(&cr, &ci);
+    else
+      output[3] = escapeTimeFPSmooth(&cr, &ci);
+    pixelsComputed++;
+  }
+  rv = ssValue(output);
   iters[x + y * winw] = rv;
   return rv;
 }
@@ -179,7 +282,10 @@ void* fpWorker(void* unused)
     if(work >= winw * winh)
       break;
     iters[work] = NOT_COMPUTED;
-    getPixelConvRate(work % winw, work / winw);
+    if(!supersample)
+      getPixelConvRate(work % winw, work / winw);
+    else
+      getPixelConvRateSS(work % winw, work / winw);
   }
   return NULL;
 }
@@ -531,6 +637,9 @@ bool upgradePrec()
 {
   //# of bits desired after leading 1 bit in pstride
   int trailing = 12;
+  // Need 2 extra bits to represent sub-pixel supersample points
+  if(supersample)
+    trailing += 2;
   //note: reserves extra bits according to zoom expo
   int totalBits = 64 * pstride.value.size;
   if(totalBits - lzcnt(&pstride.value) < trailing + zoomRate)
@@ -638,7 +747,7 @@ int main(int argc, const char** argv)
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
   maxiter = 256;
   filecount = 0;
-  const int imgSkip = 50;
+  const int imgSkip = 0;
   for(int i = 0; i < imgSkip; i++)
   {
     fpshrOne(pstride);

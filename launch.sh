@@ -1,4 +1,4 @@
 #!/bin/bash
-build/Mandelbrot -n 4 --size 640x480 --smooth --depth -300 --position -1.598989898 0
-#build/Mandelbrot -n 4 --size 640x480 --depth -300 --smooth --position -0.7436341634957655 0.1318281805802277
+build/Mandelbrot -n 4 --size 200x200 --supersample --smooth --depth -300 --position -1.71979 0
+#build/Mandelbrot -n 4 --size 100x100 --supersample --depth -300 --targetcache target2.bin --usetargetcache
 

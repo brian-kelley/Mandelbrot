@@ -47,9 +47,9 @@ float escapeTimeFP(FP* real, FP* imag)
     fpadd3(&zi, &zri, imag);
     fpadd3(&mag, &zrsquare, &zisquare);
     if(mag.value.val[0] >= four.value.val[0])
-      break;
+      return iter;
   }
-  return iter == maxiter ? -1 : iter;
+  return -1;
 }
 
 float escapeTimeFPSmooth(FP* real, FP* imag)
@@ -88,6 +88,7 @@ float escapeTimeFPSmooth(FP* real, FP* imag)
 
 float escapeTime64(double cr, double ci)
 {
+  printf("maxiter = %i\n", maxiter);
   int iter = 0;
   double zr = 0;
   double zi = 0;

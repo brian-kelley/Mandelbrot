@@ -247,6 +247,13 @@ void colorHistWeighted(Image* im, double* weights)
     pixelList[i] = i;
   //sort pixelList (iters indices) according to the iter values
   qsort(pixelList, im->w * im->h, sizeof(int), pixelCompare);
+  if(iters[pixelList[0]] == -1)
+  {
+    //something wrong with computation, but fill screen with black and return
+    for(int i = 0; i < im->w * im->h; i++)
+      im->fb[i] = 0xFF;
+    return;
+  }
   //get # of diverged pixels
   int diverged = im->w * im->h;
   while(im->iters[pixelList[diverged - 1]] == -1)
