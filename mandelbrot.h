@@ -1,18 +1,19 @@
 #ifndef MANDELBROT_H
 #define MANDELBROT_H
 
-#include "constants.h"
 #include "math.h"
 #include "time.h"
 #include "assert.h"
+#include "unistd.h"
 #include "stdatomic.h"
 #include "pthread.h"
-#include "kernels.h"
 #include "lodepng.h"
+
+#include "constants.h"
+#include "kernels.h"
 #include "fixedpoint.h"
 #include "image.h"
 #include "timing.h"
-#include "complex.h"
 #include "x86intrin.h"
 
 void drawBuf();

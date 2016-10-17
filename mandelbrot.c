@@ -19,6 +19,9 @@ bool supersample;
 int zoomRate;
 int pixelsComputed;
 const char* outputDir;
+pthread_t monitor;
+
+const int monitorWidth = 79;
 
 #define EPS_32 (1e-07)
 #define EPS_64 (1e-15)
@@ -27,6 +30,27 @@ const char* outputDir;
 // Fetch + add to get next work unit
 // Set to 0 by main thread at frame start
 _Atomic int workerIndex;
+
+void* monitorFunc(void* unused)
+{
+  double progress = 0;
+  double width = monitorWidth - 2;
+  while(progress < width)
+  {
+    progress = width * atomic_load_explicit(&workerIndex, memory_order_relaxed) / (winw * winh);
+    putchar('\r');
+    putchar('[');
+    int i;
+    for(i = 0; i < (int) progress; i++)
+      putchar('=');
+    for(; i < (int) width; i++)
+      putchar(' ');
+    putchar(']');
+    fflush(stdout);
+    usleep(100000); //sleep monitor thread for 100 ms
+  }
+  return NULL;
+}
 
 float ssValue(float* outputs)
 {
@@ -682,6 +706,7 @@ int main(int argc, const char** argv)
   int seed = 0;
   bool customPosition = false;
   long double inputX, inputY;
+  int imgSkip = 0;
   for(int i = 1; i < argc; i++)
   {
     if(strcmp(argv[i], "-n") == 0)
@@ -722,6 +747,8 @@ int main(int argc, const char** argv)
       outputDir = argv[++i];
     else if(strcmp(argv[i], "--supersample") == 0)
       supersample = true;
+    else if(strcmp(argv[i], "--start") == 0)
+      sscanf(argv[++i], "%i", &imgSkip);
     else if(strcmp(argv[i], "--position") == 0)
     {
       customPosition = true;
@@ -760,9 +787,8 @@ int main(int argc, const char** argv)
   imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 10000;
+  maxiter = 1000000;
   filecount = 0;
-  const int imgSkip = 22;
   for(int i = 0; i < imgSkip; i++)
   {
     fpshrOne(pstride);
@@ -779,9 +805,15 @@ int main(int argc, const char** argv)
   {
     u64 startCycles = getTime();
     time_t startTime = time(NULL);
+    pthread_create(&monitor, NULL, monitorFunc, NULL);
     drawBuf();
     u64 nclocks = getTime() - startCycles;
     int sec = time(NULL) - startTime;
+    pthread_join(monitor, NULL);
+    putchar('\r');
+    for(int i = 0; i < monitorWidth; i++)
+      putchar(' ');
+    putchar('\r');
     double cyclesPerIter = (double) (numThreads * nclocks) / totalIters();
     printf("Image #%i took %i second", filecount, sec);
     if(sec != 1)
