@@ -1,28 +1,19 @@
+#ifndef BIGINT_H
+#define BIGINT_H
+
 #include "math.h"
-#include "stdlib.h"
 #include "string.h"
 #include "stdbool.h"
-#include "stdio.h"
 #include "limits.h"
 #include "time.h"
 #include "assert.h"
+#include "constants.h"
 
 #ifdef __CYGWIN__
 #include "alloca.h"
 #endif
 
-#ifndef BIGINT_H
-#define BIGINT_H
-
-typedef unsigned char u8;
-typedef unsigned u32;
-typedef unsigned long long u64;
-typedef unsigned __int128 u128;
-
 #define expoBias (0x7FFFFFFF)  //this value is subtracted from actual exponent
-
-#define max(a, b) (a < b ? b : a)
-#define min(a, b) (a < b ? a : b)
 
 typedef struct
 {

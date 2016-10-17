@@ -8,12 +8,18 @@
 #include "image.h"
 #include "x86intrin.h"
 
+typedef float (*EscapeFunc)(FP*, FP*);
+
+extern EscapeFunc escapeTimeFP;
+extern EscapeFunc escapeTimeFPSmooth;
+
 //Given integer escape time, c and z, get smooth (continuous) escape time
 float smoothEscapeTime(float iters, double zr, double zi, double cr, double ci);
 
 //Single-pixel escape time: arbitrary precision
-float escapeTimeFP(FP* real, FP* imag);
-float escapeTimeFPSmooth(FP* real, FP* imag);
+void setFPPrec(int prec);
+float escapeTimeFPGeneral(FP* real, FP* imag);
+float escapeTimeFPGeneralSmooth(FP* real, FP* imag);
 
 //Single-pixel escape time: double (64) and long double (80)
 float escapeTime64(double real, double imag);
@@ -28,4 +34,9 @@ void escapeTimeVec32Smooth(float* out, float* real, float* imag);
 void escapeTimeVec64(float* out, double* real, double* imag);
 void escapeTimeVec64Smooth(float* out, double* real, double* imag);
 
+//specialized escape time functions:
+float fp2(FP* real, FP* imag);
+float fps2(FP* real, FP* imag);
+
 #endif
+

@@ -1,4 +1,24 @@
 #include "kernels.h"
+#include "specialMath.h"
+
+EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
+EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
+
+void setFPPrec(int prec)
+{
+  switch(prec)
+  {
+    //specializations for low precisions (2-10 words, 128-640 bits)
+    //note: prec level 1 should never be used (use double or long double)
+    case 2:
+      escapeTimeFP = fp2;
+      escapeTimeFPSmooth = fp2s;
+      break;
+    default:  //general case, compatible with any precision
+      escapeTimeFP = escapeTimeFPGeneral;
+      escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
+  }
+}
 
 float smoothEscapeTime(float intIters, double zr, double zi, double cr, double ci)
 {
@@ -21,7 +41,7 @@ float smoothEscapeTime(float intIters, double zr, double zi, double cr, double c
   return smoothed;
 }
 
-float escapeTimeFP(FP* real, FP* imag)
+float escapeTimeFPGeneral(FP* real, FP* imag)
 {
   //real, imag make up "c" in z = z^2 + c
   MAKE_STACK_FP(four);
@@ -52,7 +72,7 @@ float escapeTimeFP(FP* real, FP* imag)
   return -1;
 }
 
-float escapeTimeFPSmooth(FP* real, FP* imag)
+float escapeTimeFPGeneralSmooth(FP* real, FP* imag)
 {
   //real, imag make up "c" in z = z^2 + c
   MAKE_STACK_FP(four);

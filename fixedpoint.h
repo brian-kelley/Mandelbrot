@@ -80,3 +80,4 @@ FP fpRead(FILE* handle);         //heap allocates space for value
 void fuzzTest();
 
 #endif
+

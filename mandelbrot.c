@@ -20,6 +20,10 @@ int zoomRate;
 int pixelsComputed;
 const char* outputDir;
 
+#define EPS_32 (1e-07)
+#define EPS_64 (1e-15)
+#define EPS_80 (1e-19)
+
 // Fetch + add to get next work unit
 // Set to 0 by main thread at frame start
 _Atomic int workerIndex;
@@ -40,7 +44,7 @@ float ssValue(float* outputs)
 void writeImage()
 {
   char name[256];
-  sprintf(name, "%s/mandel%i.png", outputDir, filecount++);
+  sprintf(name, "%s/mandel%i.png", outputDir, filecount);
   for(int i = 0; i < winw * winh; i++)
   {
     Uint32 temp = colors[i]; 
@@ -99,8 +103,8 @@ static double sunsetWeights[] =
 {
   2,
   2,
-  1,
-  0.2
+  0.6,
+  0.06
 };
 
 static void colorMap()
@@ -119,6 +123,19 @@ static void colorMap()
   colorHistWeighted(&im, sunsetWeights);
 }
 
+u64 totalIters()
+{
+  u64 n = 0;
+  for(int i = 0; i < winw * winh; i++)
+  {
+    if(iters[i] < 0)
+      n += maxiter;
+    else
+      n += iters[i];
+  }
+  return n;
+}
+
 float getPixelConvRate(int x, int y)
 {
   //printf("Getting conv rate @ %i, %i\n", x, y);
@@ -128,7 +145,7 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
-  if(ps > 1e-15)
+  if(ps > EPS_64)
   {
     //single pixel, double prec
     if(smooth)
@@ -136,7 +153,7 @@ float getPixelConvRate(int x, int y)
     else
       rv = escapeTime64(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
-  else if(ps > 1e-19)
+  else if(ps > EPS_80)
   {
     //single pixel, extended double prec
     if(smooth)
@@ -180,7 +197,7 @@ float getPixelConvRateSS(int x, int y)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
   float output[4];
-  if(ps > 1e-15)
+  if(ps > EPS_64)
   {
     double r0 = tx + ps * (x - winw / 2);
     double i0 = ty + ps * (y - winh / 2);
@@ -199,7 +216,7 @@ float getPixelConvRateSS(int x, int y)
     else
       escapeTimeVec64Smooth(output, cr, ci);
   }
-  else if(ps > 1e-19)
+  else if(ps > EPS_80)
   {
     long double r0 = tx + ps * (x - winw / 2);
     long double i0 = ty + ps * (y - winh / 2);
@@ -300,11 +317,12 @@ void* simd32Worker(void* unused)
   float output[8];
   while(true)
   {
+    int work;
     if(!supersample)
     {
       //get 8 pixels' worth of work
       //note: memory_order_relaxed because it doesn't matter which thread gets which work
-      int work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
+      work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
       //check for all work being done (wait for join)
       if(work >= winw * winh)
         return NULL;
@@ -328,7 +346,7 @@ void* simd32Worker(void* unused)
     else
     {
       //get 2 pixels' worth of work, which is 8 iteration points
-      int work = atomic_fetch_add_explicit(&workerIndex, 2, memory_order_relaxed);
+      work = atomic_fetch_add_explicit(&workerIndex, 2, memory_order_relaxed);
       if(work >= winw * winh)
         return NULL;
       for(int i = 0; i < 2; i++)
@@ -370,11 +388,12 @@ void* simd64Worker(void* unused)
   float output[4];
   while(true)
   {
+    int work;
     if(!supersample)
     {
       //get 8 pixels' worth of work and update work index simultaneously
       //memory_order_relaxed because it doesn't matter which thread gets which work
-      int work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
+      work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
       //check for all work being done (wait for join)
       if(work >= winw * winh)
         return NULL;
@@ -395,7 +414,7 @@ void* simd64Worker(void* unused)
     }
     else
     {
-      int work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
+      work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
       if(work >= winw * winh)
         return NULL;
       double realBase = r0 + (ps * (work % winw));
@@ -422,15 +441,13 @@ void drawBuf()
 {
   workerIndex = 0;
   //machine epsilon values from wikipedia
-  const float eps32 = 1e-07;
-  const double eps64 = 1e-15;
   float ps = getValue(&pstride);
   void* (*workerFunc)(void*) = fpWorker;
-  if(ps >= eps32)
+  if(ps >= EPS_32)
   {
     workerFunc = simd32Worker;
   }
-  else if(ps >= eps64)
+  else if(ps >= EPS_64)
   {
     workerFunc = simd64Worker;
   }
@@ -442,6 +459,7 @@ void drawBuf()
   pixelsComputed = winw * winh;
   if(colors)
     colorMap();
+  putchar('\r');
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -602,13 +620,10 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         printf("*** Increased precision to level %i ***\n", prec);
     }
     //zoom in according to the PoT zoom factor defined above
-    if(verbose)
-    {
-      printf("target x: ");
-      biPrint(&targetX.value);
-      printf("target y: ");
-      biPrint(&targetY.value);
-    }
+    printf("target x: ");
+    biPrint(&targetX.value);
+    printf("target y: ");
+    biPrint(&targetY.value);
     fpshr(pstride, zoomRate);
   }
   free(iters); 
@@ -629,7 +644,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 void recomputeMaxIter()
 {
-  const int normalIncrease = 400 * zoomRate;
+  const int normalIncrease = 750 * zoomRate;
   maxiter += normalIncrease;
 }
 
@@ -651,7 +666,7 @@ int main(int argc, const char** argv)
 {
   //Process cli arguments
   //set all the arguments to default first
-  const char* targetCache = NULL;
+  const char* targetCache = "target.bin";
   bool useTargetCache = false;
   numThreads = 1;
   const int defaultWidth = 640;
@@ -663,7 +678,7 @@ int main(int argc, const char** argv)
   smooth = false;
   supersample = false;
   verbose = false;
-  deepestExpo = -300;
+  deepestExpo = -150;
   int seed = 0;
   bool customPosition = false;
   long double inputX, inputY;
@@ -745,9 +760,9 @@ int main(int argc, const char** argv)
   imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 256;
+  maxiter = 10000;
   filecount = 0;
-  const int imgSkip = 0;
+  const int imgSkip = 22;
   for(int i = 0; i < imgSkip; i++)
   {
     fpshrOne(pstride);
@@ -756,37 +771,47 @@ int main(int argc, const char** argv)
     {
       INCR_PREC(pstride);
       prec++;
-      if(verbose)
-        printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 64 * prec);
     }
     filecount++;
   }
   //resume file: filecount, last maxiter, prec
   while(getApproxExpo(&pstride) >= deepestExpo)
   {
-    Time start = getTime();
+    u64 startCycles = getTime();
+    time_t startTime = time(NULL);
     drawBuf();
-    writeImage();
-    /*
+    u64 nclocks = getTime() - startCycles;
+    int sec = time(NULL) - startTime;
+    double cyclesPerIter = (double) (numThreads * nclocks) / totalIters();
+    printf("Image #%i took %i second", filecount, sec);
+    if(sec != 1)
+      putchar('s');
     if(verbose)
     {
-      double proportionComputed = (double) pixelsComputed / (winw * winh);
-      printf("Iterated %i pixels (%.1f%%), %.1fx speedup\n",
-        pixelsComputed, 100 * proportionComputed, 1 / proportionComputed);
+      int precBits;
+      long double psval = getValue(&pstride);
+      if(psval > EPS_32)
+        precBits = 32;
+      else if(psval > EPS_64)
+        precBits = 64;
+      else if(psval > EPS_80)
+        precBits = 80;
+      else
+        precBits = 64 * prec;
+      printf(" (%.2f cycles / iter, %i max iters, %i bit precision)", 
+          cyclesPerIter, maxiter, precBits);
     }
-    */
-    double dt = timeDiff(start, getTime());
+    putchar('\n');
+    writeImage();
     fpshrOne(pstride);
     recomputeMaxIter();
-    printf("Image #%i took %f seconds (iter cap = %i).\n",
-        filecount - 1, dt, maxiter);
     if(upgradePrec())
     {
       INCR_PREC(pstride);
       prec++;
-      if(verbose)
-        printf("*** Increasing precision to level %i (%i bits) ***\n", prec, 64 * prec);
+      setFPPrec(prec);
     }
+    filecount++;
   }
   free(imgScratch);
   free(colors);

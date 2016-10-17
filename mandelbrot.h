@@ -44,5 +44,7 @@ bool upgradePrec();  //given pstride, does precision need to be upgraded
 
 float ssValue(float* outputs);
 
+u64 totalIters();
+
 #endif
 

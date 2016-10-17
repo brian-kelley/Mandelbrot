@@ -4,6 +4,15 @@
 #include "stdio.h"
 #include "stdlib.h"
 
+typedef unsigned char u8;
+typedef unsigned u32;
+typedef unsigned long long u64;
+typedef unsigned __int128 u128;
+typedef __int128 s128;
+
+#define max(a, b) (a < b ? b : a)
+#define min(a, b) (a < b ? a : b)
+
 //Special iter values
 #define NOT_COMPUTED -2
 #define BLANK -3
