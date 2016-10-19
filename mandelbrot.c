@@ -1,9 +1,10 @@
 #include "mandelbrot.h"
+#include "kernels.c"
 
 int winw;
 int winh;
 float* iters;
-unsigned* colors;
+unsigned* frameBuf;
 int lastOutline;
 FP targetX;
 FP targetY;
@@ -20,6 +21,7 @@ int zoomRate;
 int pixelsComputed;
 const char* outputDir;
 pthread_t monitor;
+ColorMap colorMap = colorSunset;
 
 const int monitorWidth = 79;
 
@@ -71,80 +73,61 @@ void writeImage()
   sprintf(name, "%s/mandel%i.png", outputDir, filecount);
   for(int i = 0; i < winw * winh; i++)
   {
-    Uint32 temp = colors[i]; 
+    Uint32 temp = frameBuf[i]; 
     //convert rgba to big endian
-    colors[i] = ((temp & 0xFF000000) >> 24) | ((temp & 0xFF0000) >> 8) | ((temp & 0xFF00) << 8) | ((temp & 0xFF) << 24);
+    frameBuf[i] = ((temp & 0xFF000000) >> 24) | ((temp & 0xFF0000) >> 8) | ((temp & 0xFF00) << 8) | ((temp & 0xFF) << 24);
   }
-  lodepng_encode32_file(name, (unsigned char*) colors, winw, winh);
+  lodepng_encode32_file(name, (unsigned char*) frameBuf, winw, winh);
 }
 
-static Uint32 rainbowColors[] =
-{
-  0xFF0000FF, //red
-  0xFFA000FF, //orange
-  0xF0F000FF, //yellow
-  0x009F00FF, //green
-  0x00FFFFFF, //cyan
-  0x0000FFFF, //blue
-  0xFF00FFFF  //violet
-};
-
-static Uint32 warmColors[] =
-{
-  0xFF0000FF, //red
-  0xFF9000FF, //orange
-  0xE0E000FF, //yellow
-  0xFF9000FF  //orange
-};
-
-static Uint32 coolColors[] =
-{
-  0x0000FFFF, //blue
-  0xE000A0FF, //violet
-  0x7777FFFF, //light blue
-  0x00F0F0FF, //cyan
-  0x00FF80FF  //green
-};
-
-//Not recommended for cyclic coloring
-static Uint32 sunsetColors[] =
-{
-  0x000000FF,   // Black
-  0x702963FF,   // Purple
-  0xC80815FF,   // Red
-  0xFF7518FF,   // Orange
-  0xFFD700FF    // Gold
-};
-
-static Uint32 rgbColors[] =
-{
-  0xFF0000FF,
-  0x00FF00FF,
-  0x0000FFFF
-};
-
-static double sunsetWeights[] =
-{
-  2,
-  2,
-  0.6,
-  0.06
-};
-
-static void colorMap()
-{
-  Image im;
-  im.iters = iters;
-  im.fb = colors;
-  im.w = winw;
-  im.h = winh;
-  im.palette = sunsetColors;
-  im.numColors = 5;
-  im.period = 100;
+//Macro to set up weighted histogram color mapping
+//Just need Uint32 array colors, and double array weights
+#define SET_UP_COLORMAP \
+  Image im; \
+  im.iters = iters; \
+  im.fb = frameBuf; \
+  im.w = winw; \
+  im.h = winh; \
+  im.palette = colors; \
+  im.numColors = sizeof(colors) / sizeof(Uint32); \
   im.cycles = 1;
-  // NOTE: weights array has length nColors - 1
-  // because weights apply to range between two colors
-  colorHistWeighted(&im, sunsetWeights);
+
+void colorSunset()
+{
+  Uint32 colors[] =
+  {
+    0x000000FF,   // Black
+    0x702963FF,   // Purple
+    0xC80815FF,   // Red
+    0xFF7518FF,   // Orange
+    0xFFD700FF    // Gold
+  };
+  double weights[] =
+  {
+    2,
+    2,
+    0.6,
+    0.06
+  };
+  SET_UP_COLORMAP;
+  colorHistWeighted(&im, weights);
+}
+
+void colorGalaxy()
+{
+  Uint32 colors[] =
+  {
+    0x000000FF,   // Black
+    0x000045FF,   // Dark blue
+    0xF0F0F0FF    // Light grey
+  };
+  double weights[] =
+  {
+    4,
+    0.1
+  };
+  SET_UP_COLORMAP;
+  colorHistWeighted(&im, weights);
 }
 
 u64 totalIters()
@@ -481,7 +464,7 @@ void drawBuf()
   for(int i = 0; i < numThreads; i++)
     pthread_join(threads[i], NULL);
   pixelsComputed = winw * winh;
-  if(colors)
+  if(frameBuf)
     colorMap();
   putchar('\r');
 }
@@ -505,7 +488,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
   targetX = FPCtorValue(prec, 0);
   targetY = FPCtorValue(prec, 0);
   iters = (float*) malloc(gpx * gpx * sizeof(float));
-  colors = NULL;
+  frameBuf = NULL;
   pstride = FPCtorValue(prec, initViewport / gpx);
   winw = gpx;
   winh = gpx;
@@ -668,7 +651,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 void recomputeMaxIter()
 {
-  const int normalIncrease = 750 * zoomRate;
+  const int normalIncrease = 200 * zoomRate;
   maxiter += normalIncrease;
 }
 
@@ -749,6 +732,22 @@ int main(int argc, const char** argv)
       supersample = true;
     else if(strcmp(argv[i], "--start") == 0)
       sscanf(argv[++i], "%i", &imgSkip);
+    else if(strcmp(argv[i], "--color") == 0)
+    {
+      i++;
+      if(strcmp(argv[i], "sunset") == 0)
+        colorMap = colorSunset;
+      else if(strcmp(argv[i], "galaxy") == 0)
+        colorMap = colorGalaxy;
+      else
+      {
+        printf("Invalid color scheme: \"%s\"\n", argv[i]);
+        puts("Valid color schemes:");
+        puts("sunset");
+        puts("galaxy");
+        exit(EXIT_FAILURE);
+      }
+    }
     else if(strcmp(argv[i], "--position") == 0)
     {
       customPosition = true;
@@ -783,11 +782,11 @@ int main(int argc, const char** argv)
   winw = imageWidth;
   winh = imageHeight;
   iters = malloc(winw * winh * sizeof(float));
-  colors = malloc(winw * winh * sizeof(unsigned));
+  frameBuf = malloc(winw * winh * sizeof(unsigned));
   imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 1000000;
+  maxiter = 1000;
   filecount = 0;
   for(int i = 0; i < imgSkip; i++)
   {
@@ -797,6 +796,7 @@ int main(int argc, const char** argv)
     {
       INCR_PREC(pstride);
       prec++;
+      setFPPrec(prec);
     }
     filecount++;
   }
@@ -810,11 +810,14 @@ int main(int argc, const char** argv)
     u64 nclocks = getTime() - startCycles;
     int sec = time(NULL) - startTime;
     pthread_join(monitor, NULL);
+    //clear monitor bar and carriage return
     putchar('\r');
     for(int i = 0; i < monitorWidth; i++)
       putchar(' ');
     putchar('\r');
     double cyclesPerIter = (double) (numThreads * nclocks) / totalIters();
+    if(supersample)
+      cyclesPerIter /= 4;
     printf("Image #%i took %i second", filecount, sec);
     if(sec != 1)
       putchar('s');
@@ -830,7 +833,7 @@ int main(int argc, const char** argv)
         precBits = 80;
       else
         precBits = 64 * prec;
-      printf(" (%.2f cycles / iter, %i max iters, %i bit precision)", 
+      printf(" (%.1f cycles / iter, %i max iters, %i bit precision)", 
           cyclesPerIter, maxiter, precBits);
     }
     putchar('\n');
@@ -846,7 +849,7 @@ int main(int argc, const char** argv)
     filecount++;
   }
   free(imgScratch);
-  free(colors);
+  free(frameBuf);
   free(iters);
 }
 

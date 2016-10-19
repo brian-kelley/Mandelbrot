@@ -10,6 +10,10 @@ typedef unsigned long long u64;
 typedef unsigned __int128 u128;
 typedef __int128 s128;
 
+// 2^maxExpo - 1 is the max value of FP
+// Should be big enough to hold the width of image
+#define maxExpo 12    
+
 #define max(a, b) (a < b ? b : a)
 #define min(a, b) (a < b ? a : b)
 

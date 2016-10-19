@@ -47,5 +47,12 @@ float ssValue(float* outputs);
 
 u64 totalIters();
 
+//color schemes
+typedef void (*ColorMap)(void);
+//color function to use (cli-configurable)
+extern ColorMap colorMap;
+void colorSunset();
+void colorGalaxy();
+
 #endif
 

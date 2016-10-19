@@ -41,7 +41,7 @@ float smoothEscapeTime(float intIters, double zr, double zi, double cr, double c
   return smoothed;
 }
 
-float escapeTimeFPGeneral(FP* real, FP* imag)
+float escapeTimeFPGeneral(FP* restrict real, FP* restrict imag)
 {
   //real, imag make up "c" in z = z^2 + c
   MAKE_STACK_FP(four);
@@ -72,7 +72,7 @@ float escapeTimeFPGeneral(FP* real, FP* imag)
   return -1;
 }
 
-float escapeTimeFPGeneralSmooth(FP* real, FP* imag)
+float escapeTimeFPGeneralSmooth(FP* restrict real, FP* restrict imag)
 {
   //real, imag make up "c" in z = z^2 + c
   MAKE_STACK_FP(four);
@@ -195,7 +195,7 @@ float escapeTime80Smooth(long double cr, long double ci)
   return smoothEscapeTime(iter, zr, zi, cr, ci);
 }
 
-void escapeTimeVec32(float* out, float* real, float* imag)
+void escapeTimeVec32(float* restrict out, float* restrict real, float* restrict imag)
 {
   __m256 four = _mm256_set1_ps(4);
   __m256 cr = _mm256_load_ps(real);
@@ -242,7 +242,7 @@ void escapeTimeVec32(float* out, float* real, float* imag)
   }
 }
 
-void escapeTimeVec32Smooth(float* out, float* real, float* imag)
+void escapeTimeVec32Smooth(float* restrict out, float* restrict real, float* restrict imag)
 {
   __m256 four = _mm256_set1_ps(4);
   __m256 cr = _mm256_load_ps(real);
@@ -296,7 +296,7 @@ void escapeTimeVec32Smooth(float* out, float* real, float* imag)
   }
 }
 
-void escapeTimeVec64(float* out, double* real, double* imag)
+void escapeTimeVec64(float* restrict out, double* restrict real, double* restrict imag)
 {
   __m256d four = _mm256_set1_pd(4);
   __m256d cr = _mm256_load_pd(real);
@@ -343,7 +343,7 @@ void escapeTimeVec64(float* out, double* real, double* imag)
   }
 }
 
-void escapeTimeVec64Smooth(float* out, double* real, double* imag)
+void escapeTimeVec64Smooth(float* restrict out, double* restrict real, double* restrict imag)
 {
   __m256d four = _mm256_set1_pd(4);
   __m256d cr = _mm256_load_pd(real);

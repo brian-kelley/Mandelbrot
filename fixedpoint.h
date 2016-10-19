@@ -3,11 +3,6 @@
 #ifndef FIXEDPOINT_H
 #define FIXEDPOINT_H
 
-/* Fixed-point number with a range (-4096, 4096) */
-/* Can configure the range with this value: */
-#define maxExpo 12
-#define N_MULTIPLIES 5  //max prec of specialized multiplies, before using general
-
 typedef void (*Multiply)(BigInt* res, BigInt* lhs, BigInt* rhs);
 extern int fpPrec;
 
