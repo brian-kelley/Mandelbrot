@@ -1,7 +1,8 @@
 #include "kernels.h"
 #include "specialMath.h"
 
-EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
+//EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
+EscapeFunc escapeTimeFP = fp2;
 EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
 
 void setFPPrec(int prec)

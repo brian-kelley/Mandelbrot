@@ -15,7 +15,12 @@
 //1x sub
 //1x shl
 
-typedef s128 FP2;
+typedef u128 FP2;
+
+void print2(FP2 val)
+{
+  printf("#%016llx%016llx", (u64) (val >> 64), (u64) (val & LOW_8));
+}
 
 FP2 load2(FP* fp)
 {
@@ -33,16 +38,17 @@ FP2 load2(FP* fp)
 
 void store2(FP* fp, FP2 v)
 {
-  if(v >= 0)
+  s128 sv = (s128) v;
+  if(sv >= 0)
     fp->sign = false;
   else
   {
     fp->sign = true;
-    v = -v;
+    sv = -sv;
   }
-  fp->value.val[1] = v & LOW_8;
+  fp->value.val[1] = sv & LOW_8;
   v >>= 64;
-  fp->value.val[0] = v;
+  fp->value.val[0] = sv;
 }
 
 double getVal2(FP2 fp2)
@@ -61,18 +67,21 @@ void setVal2(FP2* fp2, double val)
 
 FP2 mul2(FP2 a, FP2 b)
 {
-  bool sign = (a < 0) ^ (b < 0);
-  if(a < 0)
-    a = -a;
-  if(b < 0)
-    b = -b;
-  //now have 2 positive 128-bit values to multiply
-  s128 rv = (a >> 64) * (b >> 64) + ((a >> 64) * (b & LOW_8) >> 64) + ((a & LOW_8) * (b >> 64) >> 64);
-  rv <<= maxExpo;
-  if(sign)
-    return -rv;
-  else
-    return rv;
+  /*
+  u128 alo = a & LOW_8;
+  u128 ahi = a >> 64;
+  u128 blo = b & LOW_8;
+  u128 bhi = b >> 64;
+  u128 himask = 1;
+  himask <<= 127;
+  u128 sabh = a & himask ? -(bhi << 64) : 0;
+  u128 sbah = b & himask ? -(ahi << 64) : 0;
+  u128 rv = (ahi * blo >> 64) + 
+            (bhi * alo >> 64) +
+            (ahi * bhi) +
+            sabh + sbah;
+  return rv << maxExpo;
+  */
 }
 
 float fp2(FP* restrict real, FP* restrict imag)

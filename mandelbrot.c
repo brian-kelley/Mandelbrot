@@ -152,6 +152,7 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
+  /*
   if(ps > EPS_64)
   {
     //single pixel, double prec
@@ -169,6 +170,7 @@ float getPixelConvRate(int x, int y)
       rv = escapeTime80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
+  */
   {
     //single pixel, arb. precision
     MAKE_STACK_FP(cr);
@@ -450,6 +452,7 @@ void drawBuf()
   //machine epsilon values from wikipedia
   float ps = getValue(&pstride);
   void* (*workerFunc)(void*) = fpWorker;
+  /*
   if(ps >= EPS_32)
   {
     workerFunc = simd32Worker;
@@ -458,6 +461,7 @@ void drawBuf()
   {
     workerFunc = simd64Worker;
   }
+  */
   pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
   for(int i = 0; i < numThreads; i++)
     pthread_create(&threads[i], NULL, workerFunc, NULL);
@@ -777,7 +781,7 @@ int main(int argc, const char** argv)
   }
   else
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-  prec = 1;
+  prec = 2;
   zoomRate = 1;
   winw = imageWidth;
   winh = imageHeight;
