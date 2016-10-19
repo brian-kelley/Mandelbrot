@@ -67,21 +67,49 @@ void setVal2(FP2* fp2, double val)
 
 FP2 mul2(FP2 a, FP2 b)
 {
-  /*
-  u128 alo = a & LOW_8;
-  u128 ahi = a >> 64;
-  u128 blo = b & LOW_8;
-  u128 bhi = b >> 64;
-  u128 himask = 1;
-  himask <<= 127;
-  u128 sabh = a & himask ? -(bhi << 64) : 0;
-  u128 sbah = b & himask ? -(ahi << 64) : 0;
-  u128 rv = (ahi * blo >> 64) + 
-            (bhi * alo >> 64) +
-            (ahi * bhi) +
-            sabh + sbah;
-  return rv << maxExpo;
-  */
+  u128 right, wrong;
+  {
+    u128 alo = a & LOW_8;
+    u128 ahi = a >> 64;
+    u128 blo = b & LOW_8;
+    u128 bhi = b >> 64;
+    u128 himask = 1;
+    himask <<= 127;
+    u128 sabh = a & himask ? (-bhi) << 64 : 0;
+    u128 sbah = b & himask ? (-ahi) << 64 : 0;
+    u128 sabl = a & himask ? (-blo) : 0;
+    u128 sbal = b & himask ? (-alo) : 0;
+    u128 rv = ((ahi * blo) >> 64) +
+              ((bhi * alo) >> 64) +
+              sabl + sbal +
+              (ahi * bhi) +
+              sabh + sbah;
+    wrong = rv << maxExpo;
+  }
+  {
+    s128 sa = a;
+    s128 sb = b;
+    bool sign = (sa < 0) ^ (sb < 0);
+    if(sa < 0)
+      sa = -sa;
+    if(sb < 0)
+      sb = -sb;
+    //now have 2 positive 128-bit values to multiply
+    s128 rv = (sa >> 64) * (sb >> 64) + ((sa >> 64) * (sb & LOW_8) >> 64) + ((sa & LOW_8) * (sb >> 64) >> 64);
+    rv <<= maxExpo;
+    if(sign)
+      right = -rv;
+    else
+      right = rv;
+  }
+  printf("CORRECT: ");
+  print2(right);
+  putchar('\n');
+  printf("WRONG  : ");
+  print2(wrong);
+  putchar('\n');
+  putchar('\n');
+  return right;
 }
 
 float fp2(FP* restrict real, FP* restrict imag)
