@@ -8,34 +8,34 @@ extern int fpPrec;
 
 typedef struct
 {
-    BigInt value;
-    bool sign;
+  BigInt value;
+  bool sign;
 } FP;
 
 #define MAKE_STACK_FP(name) \
-    FP name; \
-    name.value.size = prec; \
-    name.value.val = (u64*) alloca(prec * sizeof(u64)); \
-    name.sign = false;
+  FP name; \
+name.value.size = prec; \
+name.value.val = (u64*) alloca(prec * sizeof(u64)); \
+name.sign = false;
 
 #define MAKE_STACK_FP_PREC(name, customPrec) \
-    FP name; \
-    name.value.size = customPrec; \
-    name.value.val = (u64*) alloca(customPrec * sizeof(u64)); \
-    name.sign = false;
+  FP name; \
+name.value.size = customPrec; \
+name.value.val = (u64*) alloca(customPrec * sizeof(u64)); \
+name.sign = false;
 
 #define INCR_PREC(f) \
-    f.value.size++; \
-    f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64)); \
-    f.value.val[f.value.size - 1] = 0;
+  f.value.size++; \
+f.value.val = (u64*) realloc(f.value.val, (f.value.size) * sizeof(u64)); \
+f.value.val[f.value.size - 1] = 0;
 
 #define CHANGE_PREC(f, newPrec) \
 { \
-    int oldPrec = f.value.size; \
-    f.value.size = newPrec; \
-    f.value.val = (u64*) realloc(f.value.val, newPrec * sizeof(u64)); \
-    for(int _i = oldPrec; _i < newPrec; _i++) \
-        f.value.val[_i] = 0; \
+  int oldPrec = f.value.size; \
+  f.value.size = newPrec; \
+  f.value.val = (u64*) realloc(f.value.val, newPrec * sizeof(u64)); \
+  for(int _i = oldPrec; _i < newPrec; _i++) \
+  f.value.val[_i] = 0; \
 }
 
 void globalUpdatePrec(int n);

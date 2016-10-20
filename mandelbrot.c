@@ -49,7 +49,7 @@ void* monitorFunc(void* unused)
       putchar(' ');
     putchar(']');
     fflush(stdout);
-    usleep(100000); //sleep monitor thread for 100 ms
+    usleep(100000); //wake monitor 10 times per sec
   }
   return NULL;
 }
@@ -123,8 +123,8 @@ void colorGalaxy()
   };
   double weights[] =
   {
-    4,
-    0.1
+    1,
+    0.01
   };
   SET_UP_COLORMAP;
   colorHistWeighted(&im, weights);
@@ -152,7 +152,6 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
-  /*
   if(ps > EPS_64)
   {
     //single pixel, double prec
@@ -170,7 +169,6 @@ float getPixelConvRate(int x, int y)
       rv = escapeTime80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
-  */
   {
     //single pixel, arb. precision
     MAKE_STACK_FP(cr);
@@ -655,7 +653,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
 
 void recomputeMaxIter()
 {
-  const int normalIncrease = 200 * zoomRate;
+  const int normalIncrease = 500 * zoomRate;
   maxiter += normalIncrease;
 }
 
@@ -781,7 +779,7 @@ int main(int argc, const char** argv)
   }
   else
     getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-  prec = 2;
+  prec = 1;
   zoomRate = 1;
   winw = imageWidth;
   winh = imageHeight;
@@ -790,7 +788,7 @@ int main(int argc, const char** argv)
   imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 1000;
+  maxiter = 200000;
   filecount = 0;
   for(int i = 0; i < imgSkip; i++)
   {

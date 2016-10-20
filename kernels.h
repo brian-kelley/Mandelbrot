@@ -14,6 +14,7 @@ extern EscapeFunc escapeTimeFP;
 extern EscapeFunc escapeTimeFPSmooth;
 
 //Given integer escape time, c and z, get smooth (continuous) escape time
+float smoothEscapeFormula(int iters, double mag);
 float smoothEscapeTime(float iters, double zr, double zi, double cr, double ci);
 
 //Single-pixel escape time: arbitrary precision

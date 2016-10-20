@@ -1,8 +1,7 @@
 #include "kernels.h"
 #include "specialMath.h"
 
-//EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
-EscapeFunc escapeTimeFP = fp2;
+EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
 EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
 
 void setFPPrec(int prec)
@@ -36,10 +35,14 @@ float smoothEscapeTime(float intIters, double zr, double zi, double cr, double c
     zi = zri + ci;
   }
   double finalMag = sqrt(zr * zr + zi * zi);
-  float smoothed = intIters + n + 1 - logl(logl(finalMag)) / M_LN2;
-  if(smoothed < 1)
-    return 1;
-  return smoothed;
+  return smoothEscapeFormula(intIters, finalMag);
+}
+
+float smoothEscapeFormula(int iters, double mag)
+{
+  if(iters == -1)
+    return -1;
+  return iters + 1 - logl(logl(mag)) / M_LN2;
 }
 
 float escapeTimeFPGeneral(FP* restrict real, FP* restrict imag)
@@ -109,7 +112,6 @@ float escapeTimeFPGeneralSmooth(FP* restrict real, FP* restrict imag)
 
 float escapeTime64(double cr, double ci)
 {
-  printf("maxiter = %i\n", maxiter);
   int iter = 0;
   double zr = 0;
   double zi = 0;
