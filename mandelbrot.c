@@ -788,7 +788,7 @@ int main(int argc, const char** argv)
   imgScratch = malloc(winw * winh * sizeof(float));
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 200000;
+  maxiter = 80000;
   filecount = 0;
   for(int i = 0; i < imgSkip; i++)
   {

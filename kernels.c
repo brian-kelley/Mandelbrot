@@ -4,6 +4,8 @@
 EscapeFunc escapeTimeFP = escapeTimeFPGeneral;
 EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
 
+#define SMOOTH_EXTRA_ITERS 5
+
 void setFPPrec(int prec)
 {
   switch(prec)
@@ -24,9 +26,8 @@ float smoothEscapeTime(float intIters, double zr, double zi, double cr, double c
 {
   if(intIters == -1 || intIters == maxiter)
     return -1;
-  const int n = 5;
   double zr2, zi2, zri;
-  for(int j = 0; j < n; j++)
+  for(int i = 0; i < SMOOTH_EXTRA_ITERS; i++)
   {
     zr2 = zr * zr;
     zi2 = zi * zi;
@@ -42,7 +43,7 @@ float smoothEscapeFormula(int iters, double mag)
 {
   if(iters == -1)
     return -1;
-  return iters + 1 - logl(logl(mag)) / M_LN2;
+  return iters + 1 + SMOOTH_EXTRA_ITERS - logl(logl(mag)) / M_LN2;
 }
 
 float escapeTimeFPGeneral(FP* restrict real, FP* restrict imag)
