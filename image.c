@@ -15,62 +15,6 @@ Uint32 lerp(Uint32 c1, Uint32 c2, double k)
   return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
 }
 
-void blockFilter(double constant, Uint32* buf, int w, int h)
-{
-  Uint32* blurred = (Uint32*) malloc(w * h * sizeof(Uint32));
-  const Uint32 BLACK = 0xFF;        //opaque black
-  //write the blurred pixels into the new buffer
-  bool fadeIntoBlack = false;
-#define HANDLE_POS(xx, yy, weight) \
-  { \
-    if((xx) >= 0 && (xx) < (w) && (yy) >= 0 && (yy) < (h)) \
-    { \
-      r += (weight) * GET_R(buf[(xx) + (yy) * (w)]); \
-      g += (weight) * GET_G(buf[(xx) + (yy) * (w)]); \
-      b += (weight) * GET_B(buf[(xx) + (yy) * (w)]); \
-      totalWeight += (weight); \
-    } \
-  }
-  double cornerWeight = constant * constant;
-  double edgeWeight = (1.0 - 2.0 * constant) * constant;
-  double centerWeight = (1.0 - 2.0 * constant) * (1.0 - 2.0 * constant);
-  for(int i = 0; i < w; i++)
-  {
-    for(int j = 0; j < h; j++)
-    {
-      double r = 0.0;
-      double g = 0.0;
-      double b = 0.0;
-      double totalWeight = 0;
-      HANDLE_POS(i - 1, j - 1, cornerWeight);
-      HANDLE_POS(i,     j - 1, edgeWeight);
-      HANDLE_POS(i + 1, j - 1, cornerWeight);
-      HANDLE_POS(i - 1, j,     edgeWeight);
-      HANDLE_POS(i,     j,     centerWeight);
-      HANDLE_POS(i + 1, j,     edgeWeight);
-      HANDLE_POS(i - 1, j + 1, cornerWeight);
-      HANDLE_POS(i,     j + 1, edgeWeight);
-      HANDLE_POS(i + 1, j + 1, cornerWeight);
-      double invWeight = 1.0 / totalWeight;
-      int rr = r * invWeight;
-      int gg = g * invWeight;
-      int bb = b * invWeight;
-      rr = min(rr, 255);
-      gg = min(gg, 255);
-      bb = min(bb, 255);
-      rr = max(rr, 0);
-      gg = max(gg, 0);
-      bb = max(bb, 0);
-      blurred[i + j * w] = ((unsigned) rr << 24) |
-                           ((unsigned) gg << 16) |
-                           ((unsigned) bb << 8) | 0xFF;
-    }
-  }
-  //copy blurred pixels back to original buffer
-  memcpy(buf, blurred, w * h * sizeof(Uint32));
-  free(blurred);
-}
-
 void reduceIters(int* iterbuf, int diffCap, int w, int h)
 {
   bool changed;

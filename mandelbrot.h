@@ -16,6 +16,9 @@
 #include "timing.h"
 #include "x86intrin.h"
 
+#include "interactive.h"
+
+//Compute framebuffer (and colors if applicable)
 void drawBuf();
 
 // float

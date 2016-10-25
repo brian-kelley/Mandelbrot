@@ -31,14 +31,13 @@ u64 biAddWord(BigInt* dst, u64 word, int position)
     return sum >> 64;
 }
 
-void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //zero out dst
     int words = lhs->size;
     for(int i = 0; i < 2 * words; i++)
         dst->val[i] = 0;
     //first, compute the low half of the full result
-    u64 hi, lo;
     u128 prod;
     for(int i = words - 1; i >= 0; i--)
     {
@@ -63,7 +62,7 @@ void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
-void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy lhs value into dst
     bool carry;
@@ -75,7 +74,7 @@ void biaddC(BigInt* dst, BigInt* lhs, BigInt* rhs)
     }
 }
 
-void bisubC(BigInt* dst, BigInt* lhs, BigInt* rhs)
+void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
     //copy words of lhs into dst
     memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
@@ -163,6 +162,11 @@ void bishrOne(BigInt* op)
         op->val[i] |= transfer;
         transfer = newTransfer;
     }
+}
+
+void biinc(BigInt* op)
+{
+  //todo
 }
 
 void biPrint(BigInt* op)
@@ -274,10 +278,7 @@ void profiler()
         printf("%10s ran %e times per sec.\n", #func, perSec); \
     }
     profile(bimul);
-    profile(bimulC);
     profile(biadd);
-    profile(biaddC);
     profile(bisub);
-    profile(bisubC);
     profileUnary(biinc);
 }

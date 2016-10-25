@@ -183,8 +183,6 @@ void traceOutline(Point start, int val, OutlineScratch* os)
     p = next;
   }
   //if bounding box has w or h 1, done as there is no interior to fill
-  int w = maxx - minx;
-  int h = maxx - minx;
   if(maxy - miny > 1 && maxx - minx > 1)
   {
     //printf("Shape bounding box: (%i, %i) to (%i, %i)\n", minx, miny, maxx, maxy);

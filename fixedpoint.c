@@ -166,7 +166,7 @@ long double getValue(FP* fp)
   //now can read off the high word of temp copy as the value
   long double temp = tempCopy.val[0];
   int expo;
-  long double mantissa = frexpl(temp, &expo);
+  frexpl(temp, &expo);
   expo -= (40 + 64 + maxExpo + lz);
   long double value = ldexpl(temp, expo);
   if(fp->sign)

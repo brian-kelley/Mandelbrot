@@ -450,7 +450,7 @@ void drawBuf()
   //machine epsilon values from wikipedia
   float ps = getValue(&pstride);
   void* (*workerFunc)(void*) = fpWorker;
-  /*
+  int nworkers = numThreads;
   if(ps >= EPS_32)
   {
     workerFunc = simd32Worker;
@@ -459,16 +459,19 @@ void drawBuf()
   {
     workerFunc = simd64Worker;
   }
-  */
-  pthread_t* threads = alloca(numThreads * sizeof(pthread_t));
-  for(int i = 0; i < numThreads; i++)
+  pthread_t* threads = alloca(nworkers * sizeof(pthread_t));
+  for(int i = 0; i < nworkers; i++)
     pthread_create(&threads[i], NULL, workerFunc, NULL);
-  for(int i = 0; i < numThreads; i++)
+  for(int i = 0; i < nworkers; i++)
     pthread_join(threads[i], NULL);
   pixelsComputed = winw * winh;
   if(frameBuf)
     colorMap();
   putchar('\r');
+}
+
+void drawBufCoarse()
+{
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -687,11 +690,17 @@ int main(int argc, const char** argv)
   smooth = false;
   supersample = false;
   verbose = false;
-  deepestExpo = -150;
+  deepestExpo = -30;
   int seed = 0;
   bool customPosition = false;
   long double inputX, inputY;
   int imgSkip = 0;
+#ifdef INTERACTIVE
+  //if interactive support enabled, default to interactive mode
+  bool interactive = true;
+#else
+  bool interactive = false;
+#endif
   for(int i = 1; i < argc; i++)
   {
     if(strcmp(argv[i], "-n") == 0)
@@ -734,6 +743,8 @@ int main(int argc, const char** argv)
       supersample = true;
     else if(strcmp(argv[i], "--start") == 0)
       sscanf(argv[++i], "%i", &imgSkip);
+    else if(strcmp(argv[i], "--cli") == 0)
+      interactive = false;
     else if(strcmp(argv[i], "--color") == 0)
     {
       i++;
@@ -772,6 +783,12 @@ int main(int argc, const char** argv)
   else if(targetCache)
     printf("Will write target location to \"%s\"\n", targetCache);
   printf("Will output %ix%i images.\n", imageWidth, imageHeight);
+#ifdef INTERACTIVE 
+  if(interactive)
+  {
+    interactiveMain(1280, 720, 1024, 640);
+  }
+#endif
   if(customPosition)
   {
     targetX = FPCtorValue(2, inputX);
