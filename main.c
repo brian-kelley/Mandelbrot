@@ -180,18 +180,8 @@ int main(int argc, const char** argv)
       putchar('s');
     if(verbose)
     {
-      int precBits;
-      long double psval = getValue(&pstride);
-      if(psval > EPS_32)
-        precBits = 32;
-      else if(psval > EPS_64)
-        precBits = 64;
-      else if(psval > EPS_80)
-        precBits = 80;
-      else
-        precBits = 64 * prec;
-      printf(" (%.1f cycles / iter, %i max iters, %i bit precision)", 
-          cyclesPerIter, maxiter, precBits);
+      printf(" (%.1f cycles / iter, %i max iters, %s)", 
+          cyclesPerIter, maxiter, getPrecString());
     }
     putchar('\n');
     writeImage();

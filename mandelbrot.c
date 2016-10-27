@@ -62,6 +62,23 @@ float ssValue(float* outputs)
   return rv;
 }
 
+const char* getPrecString()
+{
+  static char precStrBuf[64];
+  long double psval = getValue(&pstride);
+  if(psval > EPS_32)
+    return "32-bit (float)";
+  else if(psval > EPS_64)
+    return "64-bit (double)";
+  else if(psval > EPS_80)
+    return "80-bit (long double)";
+  else
+  {
+    sprintf(precStrBuf, "%i-bit (software fixed-point)", 64 * prec);
+    return precStrBuf;
+  }
+}
+
 void writeImage()
 {
   char name[256];

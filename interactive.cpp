@@ -177,6 +177,13 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       resetView();
       updateImage = true;
     }
+    ImGui::Text("Zoom level: %i", zoomDepth);
+    ImGui::Text("Pixel distance: %.3Le", getValue(&pstride));
+    ImGui::Text("Precision: %s", getPrecString());
+    if(ImGui::Checkbox("Smooth coloring", &smooth))
+      updateImage = true;
+    if(ImGui::Checkbox("Supersampling", &supersample))
+      updateImage = true;
     int inputIters = maxiter;
     if(ImGui::InputInt("Max Iters", &inputIters))
     {

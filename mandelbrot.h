@@ -69,6 +69,8 @@ float getPixelConvRateSmooth(int x, int y);
 MANDELBROT_API void upgradePrec(bool interactive);    //upgrade precision if needed
 MANDELBROT_API void downgradePrec(bool interactive);  //downgrade precision if possible
 
+MANDELBROT_API const char* getPrecString();
+
 float ssValue(float* outputs);
 
 u64 totalIters();

@@ -33,7 +33,6 @@ u64 biAddWord(BigInt* dst, u64 word, int position)
 
 void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
-  assert(dst->size == 2 * lhs->size && lhs->size == rhs->size);
   //zero out dst
   int words = lhs->size;
   for(int i = 0; i < 2 * words; i++)
@@ -65,7 +64,6 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 
 void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
-  assert(dst->size == lhs->size && dst->size == rhs->size);
   //copy lhs value into dst
   bool carry;
   for(int i = dst->size - 1; i >= 0; i--)
@@ -78,7 +76,6 @@ void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 
 void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
-  assert(dst->size == lhs->size && dst->size == rhs->size);
   //copy words of lhs into dst
   memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
   u64 carry = 1;
