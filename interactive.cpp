@@ -177,6 +177,15 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       resetView();
       updateImage = true;
     }
+    int inputIters = maxiter;
+    if(ImGui::InputInt("Max Iters", &inputIters))
+    {
+      if(inputIters > 1 && inputIters < 500000)
+      {
+        maxiter = inputIters;
+        updateImage = true;
+      }
+    }
     //*** End GUI ***
     ImGui::End();
     glViewport(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);

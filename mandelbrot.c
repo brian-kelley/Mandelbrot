@@ -652,7 +652,6 @@ void recomputeMaxIter()
 
 void upgradePrec(bool interactive)
 {
-  bool ug = false;
   //# of bits desired after leading 1 bit in pstride
   int trailing = 12;
   // Need 2 extra bits to represent sub-pixel supersample points
@@ -661,8 +660,6 @@ void upgradePrec(bool interactive)
   //note: reserves extra bits according to zoom expo
   int totalBits = 64 * pstride.value.size;
   if(totalBits - lzcnt(&pstride.value) < trailing + zoomRate)
-    ug = true;
-  if(ug)
   {
     INCR_PREC(pstride);
     if(interactive)
