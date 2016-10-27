@@ -32,6 +32,18 @@ void genTexture()
   assert(!glGetError());
 }
 
+void resetView()
+{
+  zoomDepth = 0;
+  prec = 1;
+  CHANGE_PREC(pstride, 1);
+  CHANGE_PREC(targetX, 1);
+  CHANGE_PREC(targetY, 1);
+  loadValue(&pstride, 4.0 / tw);
+  loadValue(&targetX, 0);
+  loadValue(&targetY, 0);
+}
+
 extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH)
 {
   w = windowW; h = windowH;
@@ -74,8 +86,6 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
   genTexture();
   zoomDepth = 0;
   bool updateImage = true;
-  CHANGE_PREC(targetX, prec);
-  CHANGE_PREC(targetX, prec);
   while(true)
   {
     SDL_Event event;
@@ -129,14 +139,12 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       // formula: target += 0.5 * pstride * mousePos
       MAKE_STACK_FP(temp);
       //update targetX
-      loadValue(&temp, cursor.x);
+      loadValue(&temp, cursor.x / 2);
       fpmul2(&temp, &pstride);
-      fpshrOne(temp);
       fpadd2(&targetX, &temp);
-      //update targetX
-      loadValue(&temp, cursor.y);
+      //update targetY
+      loadValue(&temp, cursor.y / 2);
       fpmul2(&temp, &pstride);
-      fpshrOne(temp);
       fpadd2(&targetY, &temp);
       fpshrOne(pstride);
       upgradePrec(true);
@@ -153,18 +161,21 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
         MAKE_STACK_FP(temp);
         loadValue(&temp, cursor.x);
         fpmul2(&temp, &pstride);
-        fpshlOne(temp);
         fpsub2(&targetX, &temp);
         //update targetX
         loadValue(&temp, cursor.y);
         fpmul2(&temp, &pstride);
-        fpshlOne(temp);
         fpsub2(&targetY, &temp);
         fpshlOne(pstride);
         downgradePrec(true);
         zoomDepth--;
         updateImage = true;
       }
+    }
+    if(ImGui::Button("Reset View"))
+    {
+      resetView();
+      updateImage = true;
     }
     //*** End GUI ***
     ImGui::End();

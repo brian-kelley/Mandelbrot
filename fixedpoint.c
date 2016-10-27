@@ -38,6 +38,7 @@ void fpadd2(FP* lhs, FP* rhs)
       lhs = rhs;
       rhs = temp;
     }
+    // |lhs| >= |rhs|
     bisub(&dst, &lhs->value, &rhs->value);
     for(int i = 0; i < words; i++)
       actualDst->value.val[i] = dst.val[i];
@@ -137,7 +138,7 @@ void loadValue(FP* fp, long double val)
   if(val < 0)
   {
     fp->sign = true;
-    val *= -1;
+    val = -val;
   }
   else
     fp->sign = false;

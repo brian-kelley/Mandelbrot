@@ -104,31 +104,43 @@ int main(int argc, const char** argv)
   if(seed == 0)
     seed = clock();
   srand(seed);
-  printf("Running on %i thread(s).\n", numThreads);
-  if(targetCache && useTargetCache)
-    printf("Will read target location from \"%s\"\n", targetCache);
-  else if(targetCache)
-    printf("Will write target location to \"%s\"\n", targetCache);
-  printf("Will output %ix%i images.\n", imageWidth, imageHeight);
   if(!interactive)
   {
-    if(customPosition)
-    {
-      targetX = FPCtorValue(2, inputX);
-      targetY = FPCtorValue(2, inputY);
-    }
-    else
-      getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+    printf("Running on %i thread(s).\n", numThreads);
+    if(targetCache && useTargetCache)
+      printf("Will read target location from \"%s\"\n", targetCache);
+    else if(targetCache)
+      printf("Will write target location to \"%s\"\n", targetCache);
+    printf("Will output %ix%i images.\n", imageWidth, imageHeight);
   }
   prec = 1;
+  pstride = FPCtorValue(prec, 4.0 / imageWidth);
+  targetX = FPCtor(1);
+  targetY = FPCtor(1);
+  if(customPosition)
+  {
+    CHANGE_PREC(targetX, 2);
+    CHANGE_PREC(targetY, 2);
+    loadValue(&targetX, inputX);
+    loadValue(&targetY, inputY);
+  }
+  else if(interactive)
+  {
+    loadValue(&targetX, 0);
+    loadValue(&targetY, 0);
+  }
+  else
+  {
+    getInterestingLocation(deepestExpo, targetCache, useTargetCache);
+  }
   zoomRate = 1;
   winw = imageWidth;
   winh = imageHeight;
   iters = malloc(winw * winh * sizeof(float));
   frameBuf = malloc(winw * winh * sizeof(unsigned));
   imgScratch = malloc(winw * winh * sizeof(float));
-  pstride = FPCtorValue(prec, 4.0 / imageWidth);
-  printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
+  if(!interactive)
+    printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
   if(interactive)
     maxiter = 1000;
   else
