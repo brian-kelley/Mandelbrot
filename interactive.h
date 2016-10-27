@@ -3,14 +3,12 @@
 #ifndef INTERACTIVE_H
 #define INTERACTIVE_H
 
-#include "constants.h"
-
 #ifdef __cplusplus
-extern "C" void initInteractive(int windowW, int windowH, int imageW, int imageH);
-extern "C" void destroyInteractive();
+extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH);
 #else
 void interactiveMain(int windowW, int windowH, int imageW, int imageH);
 #endif
 
 #endif
 #endif
+

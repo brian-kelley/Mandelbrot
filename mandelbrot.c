@@ -1,5 +1,6 @@
 #include "mandelbrot.h"
 #include "kernels.c"
+#include "stdatomic.h"
 
 int winw;
 int winh;
@@ -9,7 +10,7 @@ int lastOutline;
 FP targetX;
 FP targetY;
 FP pstride;
-int filecount;
+int zoomDepth;
 int numThreads;
 int maxiter;
 int prec;
@@ -23,12 +24,6 @@ const char* outputDir;
 pthread_t monitor;
 ColorMap colorMap = colorSunset;
 
-const int monitorWidth = 79;
-
-#define EPS_32 (1e-07)
-#define EPS_64 (1e-15)
-#define EPS_80 (1e-19)
-
 // Fetch + add to get next work unit
 // Set to 0 by main thread at frame start
 _Atomic int workerIndex;
@@ -36,7 +31,7 @@ _Atomic int workerIndex;
 void* monitorFunc(void* unused)
 {
   double progress = 0;
-  double width = monitorWidth - 2;
+  double width = MONITOR_WIDTH - 2;
   while(progress < width)
   {
     progress = width * atomic_load_explicit(&workerIndex, memory_order_relaxed) / (winw * winh);
@@ -70,7 +65,7 @@ float ssValue(float* outputs)
 void writeImage()
 {
   char name[256];
-  sprintf(name, "%s/mandel%i.png", outputDir, filecount);
+  sprintf(name, "%s/mandel%i.png", outputDir, zoomDepth);
   for(int i = 0; i < winw * winh; i++)
   {
     Uint32 temp = frameBuf[i]; 
@@ -499,7 +494,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
   winh = gpx;
   FP fbestPX = FPCtor(1);
   FP fbestPY = FPCtor(1);
-  maxiter = 10;
+  maxiter = 5000;
   while(true)
   {
     if(getApproxExpo(&pstride) <= minExpo)
@@ -622,15 +617,10 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
         fpadd2(&targetY, &pstride);
     }
     //set screen position to the best pixel
-    if(upgradePrec())
-    {
-      INCR_PREC(pstride);
-      INCR_PREC(targetX);
-      INCR_PREC(targetY);
-      prec++;
-      if(verbose)
-        printf("*** Increased precision to level %i ***\n", prec);
-    }
+    int prevPrec = prec;
+    upgradePrec(true);
+    if(verbose && prec != prevPrec)
+      printf("*** Increased precision to level %i ***\n", prec);
     //zoom in according to the PoT zoom factor defined above
     printf("target x: ");
     biPrint(&targetX.value);
@@ -660,8 +650,9 @@ void recomputeMaxIter()
   maxiter += normalIncrease;
 }
 
-bool upgradePrec()
+void upgradePrec(bool interactive)
 {
+  bool ug = false;
   //# of bits desired after leading 1 bit in pstride
   int trailing = 12;
   // Need 2 extra bits to represent sub-pixel supersample points
@@ -670,205 +661,36 @@ bool upgradePrec()
   //note: reserves extra bits according to zoom expo
   int totalBits = 64 * pstride.value.size;
   if(totalBits - lzcnt(&pstride.value) < trailing + zoomRate)
-    return true;
-  return false;
+    ug = true;
+  if(ug)
+  {
+    INCR_PREC(pstride);
+    if(interactive)
+    {
+      INCR_PREC(targetX);
+      INCR_PREC(targetY);
+    }
+    prec++;
+    setFPPrec(prec);
+  }
 }
 
-int main(int argc, const char** argv)
+void downgradePrec(bool interactive)
 {
-  //Process cli arguments
-  //set all the arguments to default first
-  const char* targetCache = "target.bin";
-  bool useTargetCache = false;
-  numThreads = 1;
-  const int defaultWidth = 640;
-  const int defaultHeight = 480;
-  int imageWidth = defaultWidth;
-  int imageHeight = defaultHeight;
-  const char* resumeFile = NULL;
-  outputDir = "output";
-  smooth = false;
-  supersample = false;
-  verbose = false;
-  deepestExpo = -30;
-  int seed = 0;
-  bool customPosition = false;
-  long double inputX, inputY;
-  int imgSkip = 0;
-#ifdef INTERACTIVE
-  //if interactive support enabled, default to interactive mode
-  bool interactive = true;
-#else
-  bool interactive = false;
-#endif
-  for(int i = 1; i < argc; i++)
+  //can't downgrade if prec is 1
+  if(prec == 1)
+    return;
+  //otherwise, can downgrade if least significant word is 0
+  if(pstride.value.val[prec - 1] == 0)
   {
-    if(strcmp(argv[i], "-n") == 0)
+    DECR_PREC(pstride);
+    if(interactive)
     {
-      //# of threads is next
-      sscanf(argv[++i], "%i", &numThreads);
-      //sanity check it
-      if(numThreads < 1)
-      {
-        puts("Can't have < 1 threads.");
-        numThreads = 1;
-      }
+      DECR_PREC(targetX);
+      DECR_PREC(targetY);
     }
-    else if(strcmp(argv[i], "--targetcache") == 0)
-      targetCache = argv[++i];
-    else if(strcmp(argv[i], "--usetargetcache") == 0)
-      useTargetCache = true;
-    else if(strcmp(argv[i], "--size") == 0)
-    {
-      if(2 != sscanf(argv[++i], "%ix%i", &imageWidth, &imageHeight))
-      {
-        puts("Size must be specified in the format <width>x<height>");
-        imageHeight = defaultWidth;
-        imageHeight = defaultHeight;
-      }
-    }
-    else if(strcmp(argv[i], "--resume") == 0)
-      resumeFile = argv[++i];
-    else if(strcmp(argv[i], "--verbose") == 0)
-      verbose = true;
-    else if(strcmp(argv[i], "--depth") == 0)
-      sscanf(argv[++i], "%i", &deepestExpo);
-    else if(strcmp(argv[i], "--seed") == 0)
-      sscanf(argv[++i], "%i", &seed);
-    else if(strcmp(argv[i], "--smooth") == 0)
-      smooth = true;
-    else if(strcmp(argv[i], "--output") == 0)
-      outputDir = argv[++i];
-    else if(strcmp(argv[i], "--supersample") == 0)
-      supersample = true;
-    else if(strcmp(argv[i], "--start") == 0)
-      sscanf(argv[++i], "%i", &imgSkip);
-    else if(strcmp(argv[i], "--cli") == 0)
-      interactive = false;
-    else if(strcmp(argv[i], "--color") == 0)
-    {
-      i++;
-      if(strcmp(argv[i], "sunset") == 0)
-        colorMap = colorSunset;
-      else if(strcmp(argv[i], "galaxy") == 0)
-        colorMap = colorGalaxy;
-      else
-      {
-        printf("Invalid color scheme: \"%s\"\n", argv[i]);
-        puts("Valid color schemes:");
-        puts("sunset");
-        puts("galaxy");
-        exit(EXIT_FAILURE);
-      }
-    }
-    else if(strcmp(argv[i], "--position") == 0)
-    {
-      customPosition = true;
-      int valid = 0;
-      valid += sscanf(argv[++i], "%Lf", &inputX);
-      valid += sscanf(argv[++i], "%Lf", &inputY);
-      if(valid != 2)
-      {
-        puts("Invalid x/y formatting! Will generate location instead.");
-        customPosition = false;
-      }
-    }
+    prec--;
+    setFPPrec(prec);
   }
-  if(seed == 0)
-    seed = clock();
-  srand(seed);
-  printf("Running on %i thread(s).\n", numThreads);
-  if(targetCache && useTargetCache)
-    printf("Will read target location from \"%s\"\n", targetCache);
-  else if(targetCache)
-    printf("Will write target location to \"%s\"\n", targetCache);
-  printf("Will output %ix%i images.\n", imageWidth, imageHeight);
-#ifdef INTERACTIVE 
-  if(interactive)
-  {
-    interactiveMain(1280, 720, 1024, 640);
-  }
-#endif
-  if(customPosition)
-  {
-    targetX = FPCtorValue(2, inputX);
-    targetY = FPCtorValue(2, inputY);
-  }
-  else
-    getInterestingLocation(deepestExpo, targetCache, useTargetCache);
-  prec = 1;
-  zoomRate = 1;
-  winw = imageWidth;
-  winh = imageHeight;
-  iters = malloc(winw * winh * sizeof(float));
-  frameBuf = malloc(winw * winh * sizeof(unsigned));
-  imgScratch = malloc(winw * winh * sizeof(float));
-  pstride = FPCtorValue(prec, 4.0 / imageWidth);
-  printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
-  maxiter = 80000;
-  filecount = 0;
-  for(int i = 0; i < imgSkip; i++)
-  {
-    fpshrOne(pstride);
-    recomputeMaxIter();
-    if(upgradePrec())
-    {
-      INCR_PREC(pstride);
-      prec++;
-      setFPPrec(prec);
-    }
-    filecount++;
-  }
-  //resume file: filecount, last maxiter, prec
-  while(getApproxExpo(&pstride) >= deepestExpo)
-  {
-    u64 startCycles = getTime();
-    time_t startTime = time(NULL);
-    pthread_create(&monitor, NULL, monitorFunc, NULL);
-    drawBuf();
-    u64 nclocks = getTime() - startCycles;
-    int sec = time(NULL) - startTime;
-    pthread_join(monitor, NULL);
-    //clear monitor bar and carriage return
-    putchar('\r');
-    for(int i = 0; i < monitorWidth; i++)
-      putchar(' ');
-    putchar('\r');
-    double cyclesPerIter = (double) (numThreads * nclocks) / totalIters();
-    if(supersample)
-      cyclesPerIter /= 4;
-    printf("Image #%i took %i second", filecount, sec);
-    if(sec != 1)
-      putchar('s');
-    if(verbose)
-    {
-      int precBits;
-      long double psval = getValue(&pstride);
-      if(psval > EPS_32)
-        precBits = 32;
-      else if(psval > EPS_64)
-        precBits = 64;
-      else if(psval > EPS_80)
-        precBits = 80;
-      else
-        precBits = 64 * prec;
-      printf(" (%.1f cycles / iter, %i max iters, %i bit precision)", 
-          cyclesPerIter, maxiter, precBits);
-    }
-    putchar('\n');
-    writeImage();
-    fpshrOne(pstride);
-    recomputeMaxIter();
-    if(upgradePrec())
-    {
-      INCR_PREC(pstride);
-      prec++;
-      setFPPrec(prec);
-    }
-    filecount++;
-  }
-  free(imgScratch);
-  free(frameBuf);
-  free(iters);
 }
 

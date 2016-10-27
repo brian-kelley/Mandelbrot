@@ -21,28 +21,28 @@ typedef struct
     int size;
 } BigInt;
 
-BigInt BigIntCtor(int size);
-BigInt BigIntCopy(BigInt* bi);
-void BigIntDtor(BigInt* bi);
+MANDELBROT_API BigInt BigIntCtor(int size);
+MANDELBROT_API BigInt BigIntCopy(BigInt* bi);
+MANDELBROT_API void BigIntDtor(BigInt* bi);
 //dst must have exactly twice the width of lhs and rhs
-void bimul(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);     // generic (asm)
+MANDELBROT_API void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs);     // generic (asm)
 
-void bimulC(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  
+MANDELBROT_API void bimulC(BigInt* dst, BigInt* lhs, BigInt* rhs);  
 //biadd returns true if a carry bit overflowed 
 //dst, lhs and rhs must have same size for add, sub
 
-void biadd(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
-void bisub(BigInt* restrict dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
-void biinc(BigInt* op);
-void bishlOne(BigInt* op);
-void bishl(BigInt* op, int bits);
-void bishr(BigInt* op, int bits);
-void bishrOne(BigInt* op);
-void biTwoComplement(BigInt* op);
-void biPrint(BigInt* op);
-void biPrintBin(BigInt* op);
-bool biNthBit(BigInt* op, int n);
-int lzcnt(BigInt* op);
+MANDELBROT_API void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs);  //returns 0 iff no overflow 
+MANDELBROT_API void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs);  //subtract rhs from lhs; result >= 0
+MANDELBROT_API void biinc(BigInt* op);
+MANDELBROT_API void bishlOne(BigInt* op);
+MANDELBROT_API void bishl(BigInt* op, int bits);
+MANDELBROT_API void bishr(BigInt* op, int bits);
+MANDELBROT_API void bishrOne(BigInt* op);
+MANDELBROT_API void biTwoComplement(BigInt* op);
+MANDELBROT_API void biPrint(BigInt* op);
+MANDELBROT_API void biPrintBin(BigInt* op);
+MANDELBROT_API bool biNthBit(BigInt* op, int n);
+MANDELBROT_API int lzcnt(BigInt* op);
 
 void profiler();
 

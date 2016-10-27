@@ -10,6 +10,12 @@ typedef unsigned long long u64;
 typedef unsigned __int128 u128;
 typedef __int128 s128;
 
+//"Machine epsilon" values for hardware float types
+//Assume values near 1 can't differ by less than this
+#define EPS_32 (1e-07)
+#define EPS_64 (1e-15)
+#define EPS_80 (1e-19)
+
 // 2^maxExpo - 1 is the max value of FP
 // Should be big enough to hold the width of image
 #define maxExpo 12    
@@ -40,5 +46,11 @@ extern int numThreads;
 extern int pixelsComputed;
 
 extern float getPixelConvRate(int x, int y);
+
+#ifdef __cplusplus
+#define MANDELBROT_API extern "C"
+#else
+#define MANDELBROT_API
+#endif
 
 #endif

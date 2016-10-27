@@ -5,7 +5,6 @@
 #include "time.h"
 #include "assert.h"
 #include "unistd.h"
-#include "stdatomic.h"
 #include "pthread.h"
 #include "lodepng.h"
 
@@ -16,10 +15,32 @@
 #include "timing.h"
 #include "x86intrin.h"
 
-#include "interactive.h"
+typedef void (*ColorMap)(void);
+
+extern int winw;
+extern int winh;
+extern float* iters;
+extern unsigned* frameBuf;
+extern int lastOutline;
+extern FP targetX;
+extern FP targetY;
+extern FP pstride;
+extern int zoomDepth;
+extern int numThreads;
+extern int maxiter;
+extern int prec;
+extern int deepestExpo;
+extern bool smooth;
+extern bool verbose;
+extern bool supersample;
+extern int zoomRate;
+extern int pixelsComputed;
+extern const char* outputDir;
+extern pthread_t monitor;
+extern ColorMap colorMap;
 
 //Compute framebuffer (and colors if applicable)
-void drawBuf();
+MANDELBROT_API void drawBuf();
 
 // float
 void drawBufSIMD32();
@@ -44,16 +65,20 @@ Uint32 getColor(int num);   //lookup color corresponding to the iteration count 
 float getPixelConvRate(int x, int y);
 float getPixelConvRateSmooth(int x, int y);
 //iterate z = z^2 + c, return iteration count
-bool upgradePrec();  //given pstride, does precision need to be upgraded
+//Precision updates: update pstride, and update targetX and targetY if interactive.
+MANDELBROT_API void upgradePrec(bool interactive);    //upgrade precision if needed
+MANDELBROT_API void downgradePrec(bool interactive);  //downgrade precision if possible
 
 float ssValue(float* outputs);
 
 u64 totalIters();
 
+//total number of chars to use for CLI progress monitor
+#define MONITOR_WIDTH 79
+void* monitorFunc(void* unused);
+
 //color schemes
-typedef void (*ColorMap)(void);
 //color function to use (cli-configurable)
-extern ColorMap colorMap;
 void colorSunset();
 void colorGalaxy();
 

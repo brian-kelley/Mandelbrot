@@ -29,6 +29,7 @@ if(INTERACTIVE)
   endif()
   include_directories(imgui)
   add_executable(Mandelbrot
+    main.c
     mandelbrot.c
     bigint.c
     fixedpoint.c
@@ -47,6 +48,7 @@ else()
   message("** Command line interface only")
   message("** Install SDL2 for GUI support")
   add_executable(Mandelbrot
+    main.c
     mandelbrot.c
     bigint.c
     fixedpoint.c
