@@ -133,6 +133,7 @@ int fpCompareMag(FP* lhs, FP* rhs)     //-1: lhs < rhs, 0: lhs == rhs, 1: lhs > 
 
 void loadValue(FP* fp, long double val)
 {
+  assert(fabsl(val) < (1 << (maxExpo - 1)));
   for(int i = 0; i < fp->value.size; i++)
     fp->value.val[i] = 0;
   if(val < 0)
@@ -142,6 +143,8 @@ void loadValue(FP* fp, long double val)
   }
   else
     fp->sign = false;
+  if(val == 0)
+    return;
   int expo;
   long double mant = frexpl(val, &expo);
   mant *= (1ULL << 32);
@@ -191,95 +194,10 @@ int getApproxExpo(FP* fp)
   return expo;
 }
 
-void fuzzTest()
+bool fpValidate(FP* val)
 {
-  const long double tol = 1e-6;
-  srand(clock());
-  int prec = 1;
-  MAKE_STACK_FP(op1);
-  MAKE_STACK_FP(op2);
-  MAKE_STACK_FP(sum);
-  MAKE_STACK_FP(diff);
-  MAKE_STACK_FP(prod);
-  MAKE_STACK_FP(oldSum);
-  MAKE_STACK_FP(oldDiff);
-  MAKE_STACK_FP(oldProd);
-  u64 tested = 0;
-  while(true)
-  {
-    long double op[2];
-    for(int i = 0; i < 2; i++)
-    {
-      int ex = -3 + rand() % 5;
-      long double mant = (long double) 1.0 / RAND_MAX * rand();
-      if(rand() & 0x10)
-        mant *= -1;
-      op[i] = ldexpl(mant, ex);
-    }
-    loadValue(&op1, op[0]);
-    loadValue(&op2, op[1]);
-    fpadd3(&sum, &op1, &op2);
-    fpsub3(&diff, &op1, &op2);
-    fpmul3(&prod, &op1, &op2);
-    {
-      long double actual = op[0] + op[1];
-      if(fabsl((getValue(&sum) - actual) / actual) > tol)
-      {
-        printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&sum));
-        break;
-      }
-    }
-    {
-      long double actual = op[0] - op[1];
-      if(fabsl((getValue(&diff) - actual) / actual) > tol)
-      {
-        printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&diff));
-        break;
-      }
-    }
-    {
-      long double actual = op[0] * op[1];
-      if(fabsl((getValue(&prod) - actual) / actual) > tol)
-      {
-        printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&op2), getValue(&prod));
-        break;
-      }
-    }
-    long double actualSum = getValue(&sum) + getValue(&op1);
-    long double actualDiff = getValue(&diff) - getValue(&op1);
-    long double actualProd = getValue(&prod) * getValue(&op1);
-    fpcopy(&oldSum, &sum);
-    fpcopy(&oldDiff, &diff);
-    fpcopy(&oldProd, &prod);
-    fpadd2(&sum, &op1);
-    fpsub2(&diff, &op1);
-    fpmul2(&prod, &op1);
-    {
-      if(fabsl((getValue(&sum) - actualSum) / actualSum) > tol)
-      {
-        printf("Result of %.20Lf + %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldSum), getValue(&sum));
-        break;
-      }
-    }
-    {
-      if(fabsl((getValue(&diff) - actualDiff) / actualDiff) > tol)
-      {
-        printf("Result of %.20Lf - %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldDiff), getValue(&diff));
-        break;
-      }
-    }
-    {
-      if(fabsl((getValue(&prod) - actualProd) / actualProd) > tol)
-      {
-        printf("Result of %.20Lf * %.20Lf = %.20Lf was wrong!\n", getValue(&op1), getValue(&oldProd), getValue(&prod));
-        break;
-      }
-    }
-    if(tested++ % 1000000 == 999999)
-      printf("%llu operand combinations tested.\n", tested);
-  }
-  printf("Failed after %llu operand combinations.\n", tested);
-  exit(EXIT_FAILURE);
+  //mantissa as signed integer must be positive
+  return !(val->value.val[0] & (1ULL << 63));
 }
 
 void fpWrite(FP* fp, FILE* handle)

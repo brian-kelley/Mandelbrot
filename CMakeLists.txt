@@ -33,8 +33,10 @@ if(INTERACTIVE)
     mandelbrot.c
     bigint.c
     fixedpoint.c
+    specialMath.c
     image.c
     boundary.c
+    test.c
     lodepng.c
     interactive.cpp
     imgui/imgui.cpp
@@ -52,8 +54,10 @@ else()
     mandelbrot.c
     bigint.c
     fixedpoint.c
+    specialMath.c
     image.c
     boundary.c
+    test.c
     lodepng.c
   )
   # TODO: make this portable

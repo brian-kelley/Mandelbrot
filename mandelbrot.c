@@ -35,6 +35,7 @@ void* monitorFunc(void* unused)
   while(progress < width)
   {
     progress = width * atomic_load_explicit(&workerIndex, memory_order_relaxed) / (winw * winh);
+    //move to start of line
     putchar('\r');
     putchar('[');
     int i;
@@ -44,7 +45,7 @@ void* monitorFunc(void* unused)
       putchar(' ');
     putchar(']');
     fflush(stdout);
-    usleep(100000); //wake monitor 10 times per sec
+    usleep(100000); //wake monitor to update 10 times per sec
   }
   return NULL;
 }
@@ -639,9 +640,9 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     if(verbose && prec != prevPrec)
       printf("*** Increased precision to level %i ***\n", prec);
     //zoom in according to the PoT zoom factor defined above
-    printf("target x: ");
+    printf("Target x: ");
     biPrint(&targetX.value);
-    printf("target y: ");
+    printf("Target y: ");
     biPrint(&targetY.value);
     fpshr(pstride, zoomRate);
   }

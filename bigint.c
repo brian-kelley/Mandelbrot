@@ -65,12 +65,12 @@ void bimul(BigInt* dst, BigInt* lhs, BigInt* rhs)
 void biadd(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
   //copy lhs value into dst
-  bool carry;
+  bool carry = false;
   for(int i = dst->size - 1; i >= 0; i--)
   {
-    bool nextCarry = (lhs->val[i] & (1ULL << 63)) && (rhs->val[i] & (1ULL << 63));
-    dst->val[i] = lhs->val[i] + rhs->val[i] + (carry ? 1 : 0);
-    carry = nextCarry;
+    u128 sum = (u128) lhs->val[i] + (u128) rhs->val[i] + (carry ? 1 : 0);
+    carry = sum >> 64;
+    dst->val[i] = (u64) sum;  //dst word is low 64 bits of sum
   }
 }
 
@@ -78,13 +78,13 @@ void bisub(BigInt* dst, BigInt* lhs, BigInt* rhs)
 {
   //copy words of lhs into dst
   memcpy(dst->val, lhs->val, lhs->size * sizeof(u64));
-  u64 carry = 1;
+  bool carry = 1;
   u128 sum;
   for(int i = dst->size - 1; i >= 0; i--)
   {
-    sum = (u128) dst->val[i] + (u128) (~rhs->val[i]) + (carry ? (u128) 0 : (u128) 1);
-    dst->val[i] = sum;
+    sum = (u128) dst->val[i] + (u128) (~rhs->val[i]) + (carry ? 1 : 0);
     carry = sum >> 64;
+    dst->val[i] = (u64) sum;
   }
 }
 

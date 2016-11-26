@@ -15,8 +15,6 @@ static SDL_Window* win;
 static SDL_GLContext glcontext;
 static GLuint textureID;
 
-//extern unsigned* frameBuf;
-
 //internal interactive functions
 void genTexture()
 {
@@ -40,7 +38,7 @@ void resetView()
   CHANGE_PREC(targetX, 1);
   CHANGE_PREC(targetY, 1);
   loadValue(&pstride, 4.0 / tw);
-  loadValue(&targetX, 0);
+  loadValue(&targetX, -0.5);
   loadValue(&targetY, 0);
 }
 
@@ -84,7 +82,6 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   }
   genTexture();
-  zoomDepth = 0;
   bool updateImage = true;
   while(true)
   {
@@ -123,7 +120,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       updateImage = false;
     }
     imgSize = ImVec2(tw, th);
-    ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);    // , tex1, tex2);
+    ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
     //get cursor pos within image
     ImVec2 cursor;
     {
@@ -139,13 +136,33 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       // formula: target += 0.5 * pstride * mousePos
       MAKE_STACK_FP(temp);
       //update targetX
-      loadValue(&temp, cursor.x / 2);
+      loadValue(&temp, (long double) cursor.x / 2);
       fpmul2(&temp, &pstride);
+
+      printf("targ x: ");
+      biPrint(&(targetX.value));
+      printf("      + ");
+      biPrint(&(temp.value));
+      printf("      = ");
+
       fpadd2(&targetX, &temp);
+
+      biPrint(&targetX.value);
+
       //update targetY
-      loadValue(&temp, cursor.y / 2);
+      loadValue(&temp, (long double) cursor.y / 2);
       fpmul2(&temp, &pstride);
+
+      printf("targ y: ");
+      biPrint(&(targetY.value));
+      printf("      + ");
+      biPrint(&(temp.value));
+      printf("      = ");
+
       fpadd2(&targetY, &temp);
+
+      biPrint(&targetY.value);
+
       fpshrOne(pstride);
       upgradePrec(true);
       zoomDepth++;

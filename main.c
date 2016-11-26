@@ -1,18 +1,22 @@
 #include "mandelbrot.h"
 #include "interactive.h"
+#include "test.h"
 
 int main(int argc, const char** argv)
 {
+  if(argc == 2 && strcmp(argv[1], "--test") == 0)
+  {
+    testAll();
+  }
   //Process cli arguments
   //set all the arguments to default first
   const char* targetCache = "target.bin";
   bool useTargetCache = false;
-  numThreads = 1;
+  numThreads = 4;
   const int defaultWidth = 640;
   const int defaultHeight = 480;
   int imageWidth = defaultWidth;
   int imageHeight = defaultHeight;
-  const char* resumeFile = NULL;
   outputDir = "output";
   smooth = false;
   supersample = false;
@@ -54,8 +58,6 @@ int main(int argc, const char** argv)
         imageHeight = defaultHeight;
       }
     }
-    else if(strcmp(argv[i], "--resume") == 0)
-      resumeFile = argv[++i];
     else if(strcmp(argv[i], "--verbose") == 0)
       verbose = true;
     else if(strcmp(argv[i], "--depth") == 0)
@@ -126,7 +128,7 @@ int main(int argc, const char** argv)
   }
   else if(interactive)
   {
-    loadValue(&targetX, 0);
+    loadValue(&targetX, -0.5);
     loadValue(&targetY, 0);
   }
   else
@@ -146,16 +148,16 @@ int main(int argc, const char** argv)
   else
     maxiter = 80000;
   zoomDepth = 0;
-  if(interactive)
-  {
-    interactiveMain(1280, 720, winw, winh);
-  }
   for(int i = 0; i < imgSkip; i++)
   {
     fpshrOne(pstride);
     recomputeMaxIter();
     upgradePrec(false);
-    zoomDepth ++;
+    zoomDepth++;
+  }
+  if(interactive)
+  {
+    interactiveMain(720, 640, winw, winh);
   }
   //resume file: zoomDepth, last maxiter, prec
   while(getApproxExpo(&pstride) >= deepestExpo)

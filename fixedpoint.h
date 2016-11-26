@@ -76,7 +76,7 @@ MANDELBROT_API int getApproxExpo(FP* lhs);
 MANDELBROT_API void fpWrite(FP* value, FILE* handle);
 MANDELBROT_API FP fpRead(FILE* handle);         //heap allocates space for value
 
-void fuzzTest();
+MANDELBROT_API bool fpValidate(FP* val);
 
 #endif
 
