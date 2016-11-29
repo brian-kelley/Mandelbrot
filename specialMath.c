@@ -53,3 +53,58 @@ float fp2s(FP* restrict real, FP* restrict imag)
   return smoothEscapeTime(i, getVal2(zr), getVal2(zi), getVal2(cr), getVal2(ci));
 }
 
+float fp3(FP* restrict real, FP* restrict imag)
+{
+  FP3 cr = load3(real);
+  FP3 ci = load3(imag);
+  FP3 zr = zero3();
+  FP3 zi = zero3();
+  FP3 zr2, zi2, zri;
+  u64 four;
+  {
+    MAKE_STACK_FP_PREC(temp, 1);
+    loadValue(&temp, 4);
+    four = temp.value.val[0];
+  }
+  for(int i = 0; i < maxiter; i++)
+  {
+    zr2 = mul3(zr, zr);
+    zri = mul3(zr, zi);
+    zri = add3(zri, zri);
+    zi2 = mul3(zi, zi);
+    if(add3(zr2, zi2).w1 >= four)
+      return i;
+    zr = add3(sub3(zr2, zi2), cr);
+    zi = add3(zri, ci);
+  }
+  return -1;
+}
+
+float fp3s(FP* restrict real, FP* restrict imag)
+{
+  FP3 cr = load3(real);
+  FP3 ci = load3(imag);
+  FP3 zr = zero3();
+  FP3 zi = zero3();
+  FP3 zr2, zi2, zri;
+  u64 four;
+  {
+    MAKE_STACK_FP_PREC(temp, 1);
+    loadValue(&temp, 4);
+    four = temp.value.val[0];
+  }
+  int i;
+  for(i = 0; i < maxiter; i++)
+  {
+    zr2 = mul3(zr, zr);
+    zri = mul3(zr, zi);
+    zri = add3(zri, zri);
+    zi2 = mul3(zi, zi);
+    if(add3(zr2, zi2).w1 >= four)
+      break;
+    zr = add3(sub3(zr2, zi2), cr);
+    zi = add3(zri, ci);
+  }
+  return smoothEscapeTime(i, getVal3(zr), getVal3(zi), getVal3(cr), getVal3(ci));
+}
+

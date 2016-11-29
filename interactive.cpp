@@ -97,6 +97,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       break;
     ImGui_ImplSdl_NewFrame(win);
     //Have main ImGui frame fill SDL window
+    SDL_GetWindowSize(win, &w, &h);
     ImVec2 initSize(w, h);
     ImVec2 initPos(0, 0);
     ImGui::SetNextWindowSize(initSize);
@@ -121,6 +122,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
     }
     imgSize = ImVec2(tw, th);
     ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
+    ImGui::Columns(2);
     //get cursor pos within image
     ImVec2 cursor;
     {
@@ -138,31 +140,11 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       //update targetX
       loadValue(&temp, (long double) cursor.x / 2);
       fpmul2(&temp, &pstride);
-
-      printf("targ x: ");
-      biPrint(&(targetX.value));
-      printf("      + ");
-      biPrint(&(temp.value));
-      printf("      = ");
-
       fpadd2(&targetX, &temp);
-
-      biPrint(&targetX.value);
-
       //update targetY
       loadValue(&temp, (long double) cursor.y / 2);
       fpmul2(&temp, &pstride);
-
-      printf("targ y: ");
-      biPrint(&(targetY.value));
-      printf("      + ");
-      biPrint(&(temp.value));
-      printf("      = ");
-
       fpadd2(&targetY, &temp);
-
-      biPrint(&targetY.value);
-
       fpshrOne(pstride);
       upgradePrec(true);
       zoomDepth++;
@@ -202,12 +184,23 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
     if(ImGui::Checkbox("Supersampling", &supersample))
       updateImage = true;
     int inputIters = maxiter;
+    ImGui::NextColumn();
     if(ImGui::InputInt("Max Iters", &inputIters))
     {
       if(inputIters > 1 && inputIters < 500000)
       {
         maxiter = inputIters;
         updateImage = true;
+      }
+    }
+    //Target cache saving
+    {
+      char target[64];
+      strcpy(target, "target.bin");
+      ImGui::InputText("Target Cache", target, 64);
+      if(ImGui::Button("Save Target"))
+      {
+        saveTargetCache(target);
       }
     }
     //*** End GUI ***

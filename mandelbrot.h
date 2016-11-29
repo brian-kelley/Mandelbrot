@@ -53,6 +53,7 @@ void* fpWorker(void* wi);
 
 void colorTestDrawBuf();  //draws 2 periods of the color map as a spectrum
 
+MANDELBROT_API void saveTargetCache(const char* cacheFile);
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 void writeImage();       //use lodePNG to write out the current conv-rate buffer
 void recomputeMaxIter();    //update iteration cap between zooms

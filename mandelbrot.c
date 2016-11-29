@@ -651,15 +651,20 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
   puts("Saving target position.");
   if(cacheFile)
   {
-    cache = fopen(cacheFile, "wb");
-    //write targetX, targetY to the cache file
-    fpWrite(&targetX, cache);
-    fpWrite(&targetY, cache);
-    fclose(cache);
+    saveTargetCache(cacheFile);
   }
   FPDtor(&pstride);
   FPDtor(&fbestPX);
   FPDtor(&fbestPY);
+}
+
+void saveTargetCache(const char* cacheFile)
+{
+  FILE* cache = fopen(cacheFile, "wb");
+  //write targetX, targetY to the cache file
+  fpWrite(&targetX, cache);
+  fpWrite(&targetY, cache);
+  fclose(cache);
 }
 
 void recomputeMaxIter()

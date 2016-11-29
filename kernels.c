@@ -8,18 +8,18 @@ EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
 
 void setFPPrec(int prec)
 {
-  puts("hi");
   switch(prec)
   {
     //specializations for low precisions (2-10 words, 128-640 bits)
     //note: prec level 1 should never be used (use double or long double)
     case 2:
-      puts("Selecting prec 2 kernel.");
       escapeTimeFP = fp2;
       escapeTimeFPSmooth = fp2s;
       break;
+    case 3:
+      escapeTimeFP = fp3;
+      escapeTimeFPSmooth = fp3s;
     default:  //general case, compatible with any precision
-      puts("Selecting general-prec kernel.");
       escapeTimeFP = escapeTimeFPGeneral;
       escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
   }
