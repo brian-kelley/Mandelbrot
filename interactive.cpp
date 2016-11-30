@@ -85,6 +85,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
   bool updateImage = true;
   while(true)
   {
+    usleep(16667);
     SDL_Event event;
     bool quit = false;
     while(SDL_PollEvent(&event))

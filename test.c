@@ -102,62 +102,134 @@ static int fpTest(int prec)
   return 1;
 }
 
-static int testSpecial2()
+//returns the number of bits that are different (least-significant)
+static int differentBits(u64* buf1, u64* buf2, int n)
 {
-  srand(42);
-  long double tol = 1e-6;
-  int prec = 2;
-  MAKE_STACK_FP(op1FP);
-  MAKE_STACK_FP(op2FP);
-  int tested = 0;
-  int success = 1;
-  while(true)
+  for(int i = 64 * n - 1; i >= 0; i--)
   {
-    long double op[2] = {getRandLongDouble(), getRandLongDouble()};
-    loadValue(&op1FP, op[0]);
-    loadValue(&op2FP, op[1]);
-    FP2 op1 = load2(&op1FP);
-    FP2 op2 = load2(&op2FP);
-    FP2 sum = op1 + op2;
-    FP2 diff = op1 - op2;
-    FP2 prod = mul2(op1, op2);
+    int word = i / 64;
+    u64 mask = 1ULL << (i % 64);
+    if((buf1[word] & mask) == (buf2[word] & mask))
     {
-      long double actual = op[0] + op[1];
-      if(fabsl((getVal2(sum) - actual)) > tol)
-      {
-        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal2(op1), getVal2(op2), getVal2(sum));
-        break;
-      }
-    }
-    {
-      long double actual = op[0] - op[1];
-      if(fabsl((getVal2(diff) - actual)) > tol)
-      {
-        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal2(op1), getVal2(op2), getVal2(diff));
-        break;
-      }
-    }
-    {
-      long double actual = op[0] * op[1];
-      if(fabsl((getVal2(prod) - actual)) > tol)
-      {
-        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal2(op1), getVal2(op2), getVal2(prod));
-        break;
-      }
-    }
-    if(tested++ % 100000 == 99999)
-    {
-      success = 0;
-      break;
+      return 64 * n - i - 1;
     }
   }
-  return success;
+  return 64 * n;
 }
+
+#define IMPL_TEST_SPECIAL(n) \
+static int testSpecial##n() \
+{ \
+  srand(42); \
+  long double tol = 1e-6; \
+  int prec = n; \
+  MAKE_STACK_FP(op1FP); \
+  MAKE_STACK_FP(op2FP); \
+  MAKE_STACK_FP(resultFP); \
+  int tested = 0; \
+  int success = 1; \
+  int warns = 0; \
+  int worst = 0; \
+  while(true) \
+  { \
+    long double op[2] = {getRandLongDouble(), getRandLongDouble()}; \
+    loadValue(&op1FP, op[0]); \
+    loadValue(&op2FP, op[1]); \
+    FP##n op1 = load##n(&op1FP); \
+    FP##n op2 = load##n(&op2FP); \
+    FP##n sum = add##n(op1, op2); \
+    FP##n diff = sub##n(op1, op2); \
+    FP##n prod = mul##n(op1, op2); \
+    { \
+      fpadd3(&resultFP, &op1FP, &op2FP); \
+      long double actual = op[0] + op[1]; \
+      if(fabsl((getVal##n(sum) - actual)) > tol) \
+      { \
+        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal##n(op1), getVal##n(op2), getVal##n(sum)); \
+        break; \
+      } \
+      if(resultFP.sign) \
+      { \
+        resultFP.sign = false; \
+        sum = neg##n(sum); \
+      } \
+      int err = differentBits(resultFP.value.val, sum.w, n); \
+      if(err > 1) \
+      { \
+        warns++; \
+        if(err > worst) \
+          worst = err; \
+      } \
+    } \
+    { \
+      fpsub3(&resultFP, &op1FP, &op2FP); \
+      long double actual = op[0] - op[1]; \
+      if(fabsl((getVal##n(diff) - actual)) > tol) \
+      { \
+        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal##n(op1), getVal##n(op2), getVal##n(diff)); \
+        break; \
+      } \
+      if(resultFP.sign) \
+      { \
+        resultFP.sign = false; \
+        diff = neg##n(diff); \
+      } \
+      int err = differentBits(resultFP.value.val, sum.w, n); \
+      if(err > 1) \
+      { \
+        warns++; \
+        if(err > worst) \
+          worst = err; \
+      } \
+    } \
+    { \
+      fpmul3(&resultFP, &op1FP, &op2FP); \
+      long double actual = op[0] * op[1]; \
+      if(fabsl((getVal##n(prod) - actual)) > tol) \
+      { \
+        printf("  <!> Failing because result of %.20f * %.20f = %.20f was wrong.\n", getVal##n(op1), getVal##n(op2), getVal##n(prod)); \
+        break; \
+      } \
+      if(resultFP.sign) \
+      { \
+        resultFP.sign = false; \
+        prod = neg##n(prod); \
+      } \
+      int err = differentBits(resultFP.value.val, sum.w, n); \
+      if(err > 1) \
+      { \
+        warns++; \
+        if(err > worst) \
+          worst = err; \
+      } \
+    } \
+    if(tested++ % 1000000 == 999999) \
+    { \
+      if(warns) \
+      { \
+        printf("  <+> Tests passed but %i of 3,000,000 results differed by > 1 bit.\n", warns); \
+        printf("  <+> Worst error: %i bits.\n", worst); \
+      } \
+      success = 0; \
+      break; \
+    } \
+  } \
+  return success; \
+}
+
+IMPL_TEST_SPECIAL(3)
+IMPL_TEST_SPECIAL(4)
+IMPL_TEST_SPECIAL(5)
+IMPL_TEST_SPECIAL(6)
+IMPL_TEST_SPECIAL(7)
+IMPL_TEST_SPECIAL(8)
+IMPL_TEST_SPECIAL(9)
+IMPL_TEST_SPECIAL(10)
 
 static int testLoadAndGet(int prec)
 {
   MAKE_STACK_FP(fp);
-  for(int i = 0; i < 10000; i++)
+  for(int i = 0; i < 1000000; i++)
   {
     //test long double <--> FP
     long double v = getRandLongDouble();
@@ -199,6 +271,10 @@ static int testLoadAndGet(int prec)
   return 0;
 }
 
+#define TEST_SPECIAL_ARITHMETIC(n) \
+  err += testSpecial##n(); \
+  printf("  Tested prec level %i.\n", n);
+
 int testAll()
 {
   puts("Testing generic fixed-point arithmetic.");
@@ -208,8 +284,15 @@ int testAll()
     err += fpTest(i);
     printf("  Tested prec level %i.\n", i);
   }
-  puts("Testing 128-bit fixed-point arithmetic.");
-  err += testSpecial2();
+  puts("Testing specialized fixed-point arithmetic.");
+  TEST_SPECIAL_ARITHMETIC(3)
+  TEST_SPECIAL_ARITHMETIC(4)
+  TEST_SPECIAL_ARITHMETIC(5)
+  TEST_SPECIAL_ARITHMETIC(6)
+  TEST_SPECIAL_ARITHMETIC(7)
+  TEST_SPECIAL_ARITHMETIC(8)
+  TEST_SPECIAL_ARITHMETIC(9)
+  TEST_SPECIAL_ARITHMETIC(10)
   puts("Testing loadValue/getValue.");
   for(int i = 1; i < 3; i++)
   {
@@ -217,13 +300,17 @@ int testAll()
     printf("  Tested prec level %i.\n", i);
   }
   puts("");
-  if(err)
+  if(err == 1)
   {
-    puts("*** TEST FAILED ***");
+    puts("*** 1 TEST FAILED ***");
+  }
+  else if(err)
+  {
+    printf("*** %i TESTS FAILED ***\n", err);
   }
   else
   {
-    puts("*** TEST PASSED ***");
+    puts("*** TESTS PASSED ***");
   }
   exit(err);
 }

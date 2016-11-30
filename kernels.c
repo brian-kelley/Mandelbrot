@@ -6,19 +6,35 @@ EscapeFunc escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
 
 #define SMOOTH_EXTRA_ITERS 5
 
+#define SELECT_KERNEL(n) \
+case n: \
+  escapeTimeFP = fp##n; \
+  escapeTimeFPSmooth = fp##n##s; \
+  break;
+
 void setFPPrec(int prec)
 {
   switch(prec)
   {
-    //specializations for low precisions (2-10 words, 128-640 bits)
-    //note: prec level 1 should never be used (use double or long double)
-    case 2:
-      escapeTimeFP = fp2;
-      escapeTimeFPSmooth = fp2s;
-      break;
-    case 3:
-      escapeTimeFP = fp3;
-      escapeTimeFPSmooth = fp3s;
+    SELECT_KERNEL(2)
+    SELECT_KERNEL(3)
+    SELECT_KERNEL(4)
+    SELECT_KERNEL(5)
+    SELECT_KERNEL(6)
+    SELECT_KERNEL(7)
+    SELECT_KERNEL(8)
+    SELECT_KERNEL(9)
+    SELECT_KERNEL(10)
+    SELECT_KERNEL(11)
+    SELECT_KERNEL(12)
+    SELECT_KERNEL(13)
+    SELECT_KERNEL(14)
+    SELECT_KERNEL(15)
+    SELECT_KERNEL(16)
+    SELECT_KERNEL(17)
+    SELECT_KERNEL(18)
+    SELECT_KERNEL(19)
+    SELECT_KERNEL(20)
     default:  //general case, compatible with any precision
       escapeTimeFP = escapeTimeFPGeneral;
       escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;
