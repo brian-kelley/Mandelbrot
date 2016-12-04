@@ -90,6 +90,14 @@ int main(int argc, const char** argv)
         exit(EXIT_FAILURE);
       }
     }
+    else if(strcmp(argv[i], "--logcolor") == 0)
+    {
+      colorMap = colorBasicLog;
+    }
+    else if(strcmp(argv[i], "--expocolor") == 0)
+    {
+      colorMap = colorBasicExpo;
+    }
     else if(strcmp(argv[i], "--position") == 0)
     {
       customPosition = true;
@@ -115,10 +123,11 @@ int main(int argc, const char** argv)
       printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
   }
-  prec = 1;
+  prec = 3;
+  setFPPrec(prec);
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
-  targetX = FPCtor(1);
-  targetY = FPCtor(1);
+  targetX = FPCtor(prec);
+  targetY = FPCtor(prec);
   if(customPosition)
   {
     CHANGE_PREC(targetX, 2);
@@ -151,13 +160,13 @@ int main(int argc, const char** argv)
   for(int i = 0; i < imgSkip; i++)
   {
     fpshrOne(pstride);
-    recomputeMaxIter();
+    upgradeIters();
     upgradePrec(false);
     zoomDepth++;
   }
   if(interactive)
   {
-    interactiveMain(720, 640, winw, winh);
+    interactiveMain(winw, winh);
   }
   //resume file: zoomDepth, last maxiter, prec
   while(getApproxExpo(&pstride) >= deepestExpo)
@@ -165,7 +174,7 @@ int main(int argc, const char** argv)
     u64 startCycles = getTime();
     time_t startTime = time(NULL);
     pthread_create(&monitor, NULL, monitorFunc, NULL);
-    drawBuf();
+    drawBuf(1);
     u64 nclocks = getTime() - startCycles;
     int sec = time(NULL) - startTime;
     pthread_join(monitor, NULL);
@@ -188,7 +197,7 @@ int main(int argc, const char** argv)
     putchar('\n');
     writeImage();
     fpshr(pstride, zoomRate);
-    recomputeMaxIter();
+    upgradeIters();
     upgradePrec(false);
     zoomDepth += zoomRate;
   }

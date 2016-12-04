@@ -277,8 +277,8 @@ static int testLoadAndGet(int prec)
 
 int testAll()
 {
-  puts("Testing generic fixed-point arithmetic.");
   int err = 0;
+  puts("Testing generic fixed-point arithmetic.");
   for(int i = 1; i <= 4; i++)
   {
     err += fpTest(i);

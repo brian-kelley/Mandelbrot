@@ -25,16 +25,6 @@ void setFPPrec(int prec)
     SELECT_KERNEL(8)
     SELECT_KERNEL(9)
     SELECT_KERNEL(10)
-    SELECT_KERNEL(11)
-    SELECT_KERNEL(12)
-    SELECT_KERNEL(13)
-    SELECT_KERNEL(14)
-    SELECT_KERNEL(15)
-    SELECT_KERNEL(16)
-    SELECT_KERNEL(17)
-    SELECT_KERNEL(18)
-    SELECT_KERNEL(19)
-    SELECT_KERNEL(20)
     default:  //general case, compatible with any precision
       escapeTimeFP = escapeTimeFPGeneral;
       escapeTimeFPSmooth = escapeTimeFPGeneralSmooth;

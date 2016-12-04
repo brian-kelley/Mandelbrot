@@ -103,7 +103,8 @@ void writeImage()
   im.h = winh; \
   im.palette = colors; \
   im.numColors = sizeof(colors) / sizeof(Uint32); \
-  im.cycles = 1;
+  im.cycles = 1; \
+  im.period = 1;
 
 void colorSunset()
 {
@@ -120,11 +121,73 @@ void colorSunset()
     2,
     2,
     0.6,
-    0.06
+    0.16
   };
   SET_UP_COLORMAP;
   colorHistWeighted(&im, weights);
 }
+
+void colorBasicExpo()
+{
+  Uint32 colors[] =
+  {
+    0xFF0000FF, //red
+    0xFF8800FF, //orange
+    0xFFFF00FF, //yellow
+    0x00BB00FF, //green
+    0x0000FFFF, //blue
+    0x550055FF  //dark purple
+  };
+  SET_UP_COLORMAP;
+  colorExpoCyclic(&im, 0.6);
+}
+
+void colorBasicLog()
+{
+  Uint32 colors[] =
+  {
+    0xFF0000FF, //red
+    0xFF8800FF, //orange
+    0xFFFF00FF, //yellow
+    0x00BB00FF, //green
+    0x0000FFFF, //blue
+    0x550055FF  //dark purple
+  };
+  SET_UP_COLORMAP;
+  colorLogCyclic(&im);
+}
+
+/*
+void colorBasicExpo()
+{
+  Uint32 colors[] =
+  {
+    0xFF0000FF, //red
+    0xFF8800FF, //orange
+    0xFFFF00FF, //yellow
+    0x00BB00FF, //green
+    0x0000FFFF, //blue
+    0x550055FF  //dark purple
+  };
+  SET_UP_COLORMAP;
+  colorExpoCyclic(&im, 0.6);
+}
+
+void colorBasicLog()
+{
+  Uint32 colors[] =
+  {
+    0xFF0000FF, //red
+    0xFF8800FF, //orange
+    0xFFFF00FF, //yellow
+    0x00BB00FF, //green
+    0x0000FFFF, //blue
+    0x550055FF  //dark purple
+  };
+  SET_UP_COLORMAP;
+  colorLogCyclic(&im);
+}
+*/
 
 void colorGalaxy()
 {
@@ -156,6 +219,15 @@ u64 totalIters()
   return n;
 }
 
+void scaleIters(float scale)
+{
+  for(int i = 0; i < winw * winh; i++)
+  {
+    if(iters[i] > 0)
+      iters[i] *= scale;
+  }
+}
+
 float getPixelConvRate(int x, int y)
 {
   //printf("Getting conv rate @ %i, %i\n", x, y);
@@ -165,6 +237,7 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
+  /*
   if(ps > EPS_64)
   {
     //single pixel, double prec
@@ -182,6 +255,7 @@ float getPixelConvRate(int x, int y)
       rv = escapeTime80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
+  */
   {
     //single pixel, arb. precision
     MAKE_STACK_FP(cr);
@@ -457,7 +531,7 @@ void* simd64Worker(void* unused)
   return NULL;
 }
 
-void drawBuf()
+void drawBuf(float scale)
 {
   workerIndex = 0;
   //machine epsilon values from wikipedia
@@ -472,19 +546,18 @@ void drawBuf()
   {
     workerFunc = simd64Worker;
   }
+  printf("Using special #%i kernel.\n", prec);
   pthread_t* threads = alloca(nworkers * sizeof(pthread_t));
   for(int i = 0; i < nworkers; i++)
     pthread_create(&threads[i], NULL, workerFunc, NULL);
   for(int i = 0; i < nworkers; i++)
     pthread_join(threads[i], NULL);
   pixelsComputed = winw * winh;
+  if(scale != 1)
+    scaleIters(scale);
   if(frameBuf)
     colorMap();
   putchar('\r');
-}
-
-void drawBufCoarse()
-{
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
@@ -529,7 +602,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     }
     for(int i = 0; i < gpx * gpx; i++)
       iters[i] = NOT_COMPUTED;
-    drawBuf();
+    drawBuf(1);
     if(verbose)
     {
       puts("**********The buffer:**********");
@@ -591,7 +664,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     bestPX = zoomPixel % gpx;
     bestPY = zoomPixel / gpx;
     itersum /= (gpx * gpx); //compute average iter count
-    recomputeMaxIter();
+    upgradeIters();
     if(bestIters == 0)
     {
       puts("getInterestingLocation() frame contains all converging points!");
@@ -667,16 +740,10 @@ void saveTargetCache(const char* cacheFile)
   fclose(cache);
 }
 
-void recomputeMaxIter()
-{
-  const int normalIncrease = 500 * zoomRate;
-  maxiter += normalIncrease;
-}
-
 void upgradePrec(bool interactive)
 {
   //# of bits desired after leading 1 bit in pstride
-  int trailing = 12;
+  int trailing = 20;
   // Need 2 extra bits to represent sub-pixel supersample points
   if(supersample)
     trailing += 2;
@@ -712,5 +779,15 @@ void downgradePrec(bool interactive)
     prec--;
     setFPPrec(prec);
   }
+}
+
+void upgradeIters()
+{
+  maxiter += 400 * zoomRate;
+}
+
+void downgradeIters()
+{
+  maxiter -= 400 * zoomRate;
 }
 

@@ -40,7 +40,7 @@ extern pthread_t monitor;
 extern ColorMap colorMap;
 
 //Compute framebuffer (and colors if applicable)
-MANDELBROT_API void drawBuf();
+MANDELBROT_API void drawBuf(float scale);
 
 // float
 void drawBufSIMD32();
@@ -56,7 +56,6 @@ void colorTestDrawBuf();  //draws 2 periods of the color map as a spectrum
 MANDELBROT_API void saveTargetCache(const char* cacheFile);
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache);
 void writeImage();       //use lodePNG to write out the current conv-rate buffer
-void recomputeMaxIter();    //update iteration cap between zooms
 //void saveResumeState(const char* fname);
 //void loadResumeState(const char* fname);
 
@@ -69,6 +68,8 @@ float getPixelConvRateSmooth(int x, int y);
 //Precision updates: update pstride, and update targetX and targetY if interactive.
 MANDELBROT_API void upgradePrec(bool interactive);    //upgrade precision if needed
 MANDELBROT_API void downgradePrec(bool interactive);  //downgrade precision if possible
+MANDELBROT_API void upgradeIters();    //update iteration cap between zooms
+MANDELBROT_API void downgradeIters();    //update iteration cap between zooms
 
 MANDELBROT_API const char* getPrecString();
 
@@ -82,8 +83,12 @@ void* monitorFunc(void* unused);
 
 //color schemes
 //color function to use (cli-configurable)
-void colorSunset();
-void colorGalaxy();
+MANDELBROT_API void colorSunset();
+MANDELBROT_API void colorGalaxy();
+MANDELBROT_API void colorBasicExpo();
+MANDELBROT_API void colorBasicLog();
+
+MANDELBROT_API void scaleIters(float scale);
 
 #endif
 

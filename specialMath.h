@@ -16,16 +16,6 @@ float fp7(FP* restrict real, FP* restrict imag);
 float fp8(FP* restrict real, FP* restrict imag);
 float fp9(FP* restrict real, FP* restrict imag);
 float fp10(FP* restrict real, FP* restrict imag);
-float fp11(FP* restrict real, FP* restrict imag);
-float fp12(FP* restrict real, FP* restrict imag);
-float fp13(FP* restrict real, FP* restrict imag);
-float fp14(FP* restrict real, FP* restrict imag);
-float fp15(FP* restrict real, FP* restrict imag);
-float fp16(FP* restrict real, FP* restrict imag);
-float fp17(FP* restrict real, FP* restrict imag);
-float fp18(FP* restrict real, FP* restrict imag);
-float fp19(FP* restrict real, FP* restrict imag);
-float fp20(FP* restrict real, FP* restrict imag);
 
 float fp2s(FP* restrict real, FP* restrict imag);
 float fp3s(FP* restrict real, FP* restrict imag);
@@ -36,16 +26,6 @@ float fp7s(FP* restrict real, FP* restrict imag);
 float fp8s(FP* restrict real, FP* restrict imag);
 float fp9s(FP* restrict real, FP* restrict imag);
 float fp10s(FP* restrict real, FP* restrict imag);
-float fp11s(FP* restrict real, FP* restrict imag);
-float fp12s(FP* restrict real, FP* restrict imag);
-float fp13s(FP* restrict real, FP* restrict imag);
-float fp14s(FP* restrict real, FP* restrict imag);
-float fp15s(FP* restrict real, FP* restrict imag);
-float fp16s(FP* restrict real, FP* restrict imag);
-float fp17s(FP* restrict real, FP* restrict imag);
-float fp18s(FP* restrict real, FP* restrict imag);
-float fp19s(FP* restrict real, FP* restrict imag);
-float fp20s(FP* restrict real, FP* restrict imag);
 
 /* Macro-based generic specializations */
 //Required functions:
@@ -82,16 +62,6 @@ DECL_SPECIALIZATION(7)
 DECL_SPECIALIZATION(8)
 DECL_SPECIALIZATION(9)
 DECL_SPECIALIZATION(10)
-DECL_SPECIALIZATION(11)
-DECL_SPECIALIZATION(12)
-DECL_SPECIALIZATION(13)
-DECL_SPECIALIZATION(14)
-DECL_SPECIALIZATION(15)
-DECL_SPECIALIZATION(16)
-DECL_SPECIALIZATION(17)
-DECL_SPECIALIZATION(18)
-DECL_SPECIALIZATION(19)
-DECL_SPECIALIZATION(20)
 
 #define IMPL_PRINT(n) \
 inline void print##n(FP##n val) \
@@ -103,7 +73,7 @@ inline void print##n(FP##n val) \
 #define IMPL_LOAD(n) \
 inline FP##n load##n(FP* fp) \
 { \
-  FP##n v = zero##n(); \
+  FP##n v; \
   memcpy(v.w, fp->value.val, n * 8); \
   if(fp->sign) \
     v = neg##n(v); \
@@ -148,13 +118,13 @@ inline FP##n zero##n() \
 inline FP##n shl##n(FP##n v, int bits) \
 { \
   u64 transfer; \
-  u64 mask = (1ULL << bits) - 1; \
   int transferShift = 64 - bits; \
+  u64 transferMask = ((1ULL << bits) - 1) << transferShift; \
   for(int i = 0; i < n - 1; i++) \
   { \
-    transfer = v.w[i + 1] & mask; \
+    transfer = (v.w[i + 1] & transferMask) >> transferShift; \
     v.w[i] <<= bits; \
-    v.w[i] |= (transfer >> transferShift); \
+    v.w[i] |= transfer; \
   } \
   v.w[n - 1] <<= bits; \
   return v; \
@@ -207,7 +177,7 @@ inline FP##n mul##n(FP##n a, FP##n b) \
   FP##n sab = (a.w[0] & (1ULL << 63)) ? neg##n(b) : zero##n(); \
   FP##n sba = (b.w[0] & (1ULL << 63)) ? neg##n(a) : zero##n(); \
   u128 partial[n]; \
-  memset(partial, 0, n * 16); \
+  memset(partial, 0, n * sizeof(u128)); \
   for(int i = 0; i < n; i++) \
   { \
     partial[i] += sab.w[i]; \
@@ -215,11 +185,12 @@ inline FP##n mul##n(FP##n a, FP##n b) \
   } \
   for(int i = 0; i < n; i++) \
   { \
-    for(int j = 0; j < n - i - 1; j++) \
+    for(int j = 0; j < n - i; j++) \
     { \
-      u128 prod = (u128) a.w[i] * (u128) b.w[i]; \
+      u128 prod = (u128) a.w[i] * (u128) b.w[j]; \
       partial[i + j] += (prod >> 64); \
-      partial[i + j + 1] += (u64) prod; \
+      if(i + j + 1 < n) \
+        partial[i + j + 1] += (u64) prod; \
     } \
   } \
   FP##n result; \
@@ -232,6 +203,45 @@ inline FP##n mul##n(FP##n a, FP##n b) \
   } \
   return shl##n(result, maxExpo); \
 }
+
+/*
+#define IMPL_MUL(n) \
+inline FP##n mul##n(FP##n a, FP##n b) \
+{ \
+  u64 f1[n * 2]; \
+  u64 f2[n * 2]; \
+  for(int i = 0; i < n; i++) \
+  { \
+    f1[i + n] = a.w[i]; \
+    f2[i + n] = b.w[i]; \
+  } \
+  for(int i = 0; i < n; i++) \
+  { \
+    f1[i] = (a.w[0] & (1ULL << 63)) ? ~(0ULL) : 0; \
+    f2[i] = (b.w[0] & (1ULL << 63)) ? ~(0ULL) : 0; \
+  } \
+  u128 partial[n * 4]; \
+  memset(partial, 0, n * 4 * sizeof(u128)); \
+  for(int i = 0; i < n * 2; i++) \
+  { \
+    for(int j = 0; j < n * 2; j++) \
+    { \
+      u128 prod = (u128) a.w[i] * (u128) b.w[j]; \
+      partial[i + j] += (prod >> 64); \
+      partial[i + j + 1] += (u64) prod; \
+    } \
+  } \
+  FP##n result; \
+  u128 sum = 0; \
+  for(int i = 3 * n - 1; i >= 2 * n; i--) \
+  { \
+    sum += partial[i]; \
+    result.w[i - 2 * n] = (u64) sum; \
+    sum >>= 64; \
+  } \
+  return shl##n(result, maxExpo); \
+}
+*/
 
 /* 128-bit specialization using u128 */
 /* simpler & faster than macro */
@@ -341,163 +351,6 @@ inline FP2 mul2(FP2 a, FP2 b)
           (ahi * bhi)) << maxExpo;
 }
 
-/* FP3 implementation */
-/* note: declared above with DECL_SPECIALIZATION(3) */
-
-inline void print3(FP3 val)
-{
-  printf("%016llx%016llx%016llx", val.w[0], val.w[1], val.w[2]);
-}
-
-inline FP3 load3(FP* fp)
-{
-  FP3 v = {{0, 0, 0}};
-  v.w[0] = fp->value.val[0];
-  if(fp->value.size > 1)
-  {
-    v.w[1] = fp->value.val[0];
-    if(fp->value.size > 2)
-    {
-      v.w[2] = fp->value.val[0];
-    }
-  }
-  if(fp->sign)
-  {
-    v = neg3(v);
-  }
-  return v;
-}
-
-inline void store3(FP* fp, FP3 v)
-{
-  bool sign = v.w[0] & (1ULL << 63);
-  if(sign)
-  {
-    v = neg3(v);
-  }
-  fp->value.val[0] = v.w[0];
-  fp->value.val[1] = v.w[1];
-  fp->value.val[2] = v.w[2];
-  fp->sign = sign;
-}
-
-inline double getVal3(FP3 fp3)
-{
-  MAKE_STACK_FP_PREC(fp, 3);
-  bool sign = fp3.w[0] & (1ULL << 63);
-  if(sign)
-  {
-    fp3 = neg3(fp3);
-  }
-  fp.value.val[0] = fp3.w[0];
-  fp.value.val[1] = fp3.w[1];
-  fp.value.val[2] = fp3.w[2];
-  fp.sign = sign;
-  return getValue(&fp);
-}
-
-inline void setVal3(FP3* fp3, double val)
-{
-  MAKE_STACK_FP_PREC(fp, 3);
-  loadValue(&fp, val);
-  fp3->w[0] = fp.value.val[0];
-  fp3->w[1] = fp.value.val[1];
-  fp3->w[2] = fp.value.val[2];
-  if(fp.sign)
-  {
-    *fp3 = neg3(*fp3);
-  }
-}
-
-inline FP3 zero3()
-{
-  FP3 rv;
-  memset(&rv, 0, 3 * 8);
-  return rv;
-}
-
-inline FP3 inc3(FP3 a)
-{
-  u128 wsum = 1 + a.w[2];
-  a.w[2] = (u64) wsum;
-  wsum = (wsum >> 64) + a.w[1];
-  a.w[1] = (u64) wsum;
-  wsum = (wsum >> 64) + a.w[2];
-  a.w[2] = (u64) wsum;
-  return a;
-}
-
-inline FP3 neg3(FP3 a)
-{
-  a.w[0] = ~a.w[0];
-  a.w[1] = ~a.w[1];
-  a.w[2] = ~a.w[2];
-  a = inc3(a);
-  return a;
-}
-
-inline FP3 add3(FP3 a, FP3 b)
-{
-  u128 wsum = a.w[2] + b.w[2];
-  a.w[2] = (u64) wsum;
-  wsum = (wsum >> 64) + a.w[1] + b.w[1];
-  a.w[1] = (u64) wsum;
-  wsum = (wsum >> 64) + a.w[0] + b.w[0];
-  a.w[0] = (u64) wsum;
-  return a;
-}
-
-inline FP3 sub3(FP3 a, FP3 b)
-{
-  b = neg3(b);
-  return add3(a, b);
-}
-
-/*
-     sa   sa   sa   a1   a2   a3
-     sb   sb   sb   b1   b2   b3
-                 x------------
-                         (a3*b3)
-                    (a2*b3)
-                    (a3*b2)
-               (a1*b3)
-               (a2*b2)
-               (a3*b1)
-          (a1*b2)
-          (a2*b1)
-     (a1*b1)
- 
- */
-
-IMPL_SHL(3)
-
-inline FP3 mul3(FP3 a, FP3 b)
-{
-  //place -1 (high word added to w[2] of result)
-  u128 a1b3 = (u128) a.w[0] * (u128) b.w[2];
-  u128 a2b2 = (u128) a.w[1] * (u128) b.w[1];
-  u128 a3b1 = (u128) a.w[2] * (u128) b.w[0];
-  //place 0 (high/low added to w[1]/w[2] of result)
-  u128 a1b2 = (u128) a.w[0] * (u128) b.w[1];
-  u128 a2b1 = (u128) a.w[1] * (u128) b.w[0];
-  //place 1 (high/low added to w[0]/w[1] of result)
-  u128 a1b1 = (u128) a.w[0] * (u128) b.w[0];
-  //sign-word products, can be reused
-  FP3 sab = (a.w[0] & (1ULL << 63)) ? neg3(b) : zero3();
-  FP3 sba = (b.w[0] & (1ULL << 63)) ? neg3(a) : zero3();
-  //add results, one word at a time
-  FP3 result;
-  u128 sum = (a1b3 >> 64) + (a2b2 >> 64) + (a3b1 >> 64) + (u64) a1b2 + (u64) a2b1 + sab.w[2] + sba.w[2];
-  result.w[2] = (u64) sum;
-  sum >>= 64;   //sum now holds carry value to be added to w[1]
-  sum += (a1b2 >> 64) + (a2b1 >> 64) + (u64) a1b1 + sab.w[1] + sba.w[1];
-  result.w[1] = (u64) sum;
-  sum >>= 64;
-  sum += (a1b1 >> 64) + sab.w[0] + sba.w[0];
-  result.w[0] = (u64) sum;
-  return shl3(result, maxExpo);
-}
-
 //complete specialization for precision 64n bits
 #define IMPL_SPECIALIZATION(n) \
 IMPL_PRINT(n) \
@@ -513,6 +366,7 @@ IMPL_ADD(n) \
 IMPL_SUB(n) \
 IMPL_MUL(n)
 
+IMPL_SPECIALIZATION(3)
 IMPL_SPECIALIZATION(4)
 IMPL_SPECIALIZATION(5)
 IMPL_SPECIALIZATION(6)
@@ -520,16 +374,6 @@ IMPL_SPECIALIZATION(7)
 IMPL_SPECIALIZATION(8)
 IMPL_SPECIALIZATION(9)
 IMPL_SPECIALIZATION(10)
-IMPL_SPECIALIZATION(11)
-IMPL_SPECIALIZATION(12)
-IMPL_SPECIALIZATION(13)
-IMPL_SPECIALIZATION(14)
-IMPL_SPECIALIZATION(15)
-IMPL_SPECIALIZATION(16)
-IMPL_SPECIALIZATION(17)
-IMPL_SPECIALIZATION(18)
-IMPL_SPECIALIZATION(19)
-IMPL_SPECIALIZATION(20)
 
 #endif
 

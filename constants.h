@@ -20,8 +20,10 @@ typedef __int128 s128;
 // Should be big enough to hold the width of image
 #define maxExpo 12    
 
+#ifndef __cplusplus
 #define max(a, b) (a < b ? b : a)
 #define min(a, b) (a < b ? a : b)
+#endif
 
 //Special iter values
 #define NOT_COMPUTED -2
@@ -54,3 +56,4 @@ extern float getPixelConvRate(int x, int y);
 #endif
 
 #endif
+

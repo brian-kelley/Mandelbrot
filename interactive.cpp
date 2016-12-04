@@ -14,11 +14,29 @@ static int th;
 static SDL_Window* win;
 static SDL_GLContext glcontext;
 static GLuint textureID;
+static float iterScale;
+static int colorFuncSel;
+//whether the image needs to be updated before next render
+static bool imageStale;
+
+void textureClear()
+{
+  for(int i = 0; i < tw * th; i++)
+  {
+    frameBuf[i] = 0xFF000000;
+  }
+  glBindTexture(GL_TEXTURE_2D, textureID);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
+  assert(!glGetError());
+  imageStale = true;
+}
 
 //internal interactive functions
 void genTexture()
 {
-  drawBuf();
+  if(!imageStale)
+    return;
+  drawBuf(iterScale);
   //fix byte order
   for(int i = 0; i < tw * th; i++)
   {
@@ -28,11 +46,13 @@ void genTexture()
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
   assert(!glGetError());
+  imageStale = false;
 }
 
 void resetView()
 {
   zoomDepth = 0;
+  maxiter = 1000;
   prec = 1;
   CHANGE_PREC(pstride, 1);
   CHANGE_PREC(targetX, 1);
@@ -42,11 +62,14 @@ void resetView()
   loadValue(&targetY, 0);
 }
 
-extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH)
+extern "C" void interactiveMain(int imageW, int imageH)
 {
-  w = windowW; h = windowH;
+  w = imageW;
+  h = imageH + 200;
   tw = imageW;
   th = imageH;
+  iterScale = 1;
+  colorFuncSel = 0;
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
   {
     puts("Failed to initialize SDL.");
@@ -81,8 +104,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tsize, tsize,
         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   }
-  genTexture();
-  bool updateImage = true;
+  textureClear();
   while(true)
   {
     usleep(16667);
@@ -116,12 +138,8 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
     ImVec2 tex1(0, 0);
     //other corner of image
     ImVec2 tex2((float) tw / tsize, (float) th / tsize);
-    if(updateImage)
-    {
-      genTexture();
-      updateImage = false;
-    }
     imgSize = ImVec2(tw, th);
+    genTexture();
     ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
     ImGui::Columns(2);
     //get cursor pos within image
@@ -148,8 +166,9 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       fpadd2(&targetY, &temp);
       fpshrOne(pstride);
       upgradePrec(true);
+      upgradeIters();
       zoomDepth++;
-      updateImage = true;
+      imageStale = true;
     }
     else if(ImGui::IsItemClicked(1))
     {
@@ -168,22 +187,23 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
         fpsub2(&targetY, &temp);
         fpshlOne(pstride);
         downgradePrec(true);
+        downgradeIters();
         zoomDepth--;
-        updateImage = true;
+        imageStale = true;
       }
     }
     if(ImGui::Button("Reset View"))
     {
       resetView();
-      updateImage = true;
+      imageStale = true;
     }
     ImGui::Text("Zoom level: %i", zoomDepth);
     ImGui::Text("Pixel distance: %.3Le", getValue(&pstride));
     ImGui::Text("Precision: %s", getPrecString());
     if(ImGui::Checkbox("Smooth coloring", &smooth))
-      updateImage = true;
-    if(ImGui::Checkbox("Supersampling", &supersample))
-      updateImage = true;
+      imageStale = true;
+    if(ImGui::Checkbox("Supersampling", &supersample) && supersample)
+      imageStale = true;
     int inputIters = maxiter;
     ImGui::NextColumn();
     if(ImGui::InputInt("Max Iters", &inputIters))
@@ -191,8 +211,31 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       if(inputIters > 1 && inputIters < 500000)
       {
         maxiter = inputIters;
-        updateImage = true;
+        imageStale = true;
       }
+    }
+    //Color function selector
+    {
+      //possible (integer) values
+      const int HIST = 0;
+      const int LOG = 1;
+      const int EXPO = 2;
+      const char* options[] = {"Histogram", "Logarithmic", "Exponential"};
+      if(ImGui::ListBox("Color Function", &colorFuncSel, options, 3))
+      {
+        if(colorFuncSel == 0)
+          colorMap = colorSunset;
+        else if(colorFuncSel == 1)
+          colorMap = colorBasicLog;
+        else if(colorFuncSel == 2)
+          colorMap = colorBasicExpo;
+        imageStale = true;
+      }
+    }
+    //Iter scaling
+    if(ImGui::InputFloat("Color Scale", &iterScale))
+    {
+      imageStale = true;
     }
     //Target cache saving
     {
@@ -200,9 +243,7 @@ extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH
       strcpy(target, "target.bin");
       ImGui::InputText("Target Cache", target, 64);
       if(ImGui::Button("Save Target"))
-      {
         saveTargetCache(target);
-      }
     }
     //*** End GUI ***
     ImGui::End();

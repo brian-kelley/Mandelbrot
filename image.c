@@ -115,7 +115,7 @@ static double expoMapFunc(double val)
 
 static double logMapFunc(double val)
 {
-  return log(val + 20);
+  return log(val + 1) / log(1.05);
 }
 
 static void applyCyclicMapping(Image* im, Mapping func)
@@ -134,25 +134,14 @@ static void applyCyclicMapping(Image* im, Mapping func)
     else
       im->iters[i] = -1.0;
   }
-  double cap = getPercentileValue(im->iters, im->w, im->h, 1);
-  //clamp values
-  for(int i = 0; i < im->w * im->h; i++)
-  {
-    if(im->iters[i] > cap)
-      im->iters[i] = cap;
-  }
-  double minMapped = func(minVal);
-  //scale up to reach desired color range
-  double scale = (im->period * im->cycles) / (cap - minMapped);
-  double perSegment = (double) im->period / im->numColors;
+  double scale = 0.05; //(im->period * im->cycles) / (cap - minMapped);
+  double perSegment = im->period / im->cycles / im->numColors;
   for(int i = 0; i < im->w * im->h; i++)
   {
     //subtract 1 so that effective min value maps to 0 (origin in color cycle)
-    double val = im->iters[i];
+    double val = im->iters[i] * scale;
     if(val >= 0)
     {
-      double delta = (val - minMapped) * scale;
-      val = minMapped + delta;
       int segment = val / perSegment;
       double lerpK = (val - segment * perSegment) / perSegment;
       int lowColorIndex = segment % im->numColors;

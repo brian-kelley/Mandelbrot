@@ -3,11 +3,9 @@
 #ifndef INTERACTIVE_H
 #define INTERACTIVE_H
 
-#ifdef __cplusplus
-extern "C" void interactiveMain(int windowW, int windowH, int imageW, int imageH);
-#else
-void interactiveMain(int windowW, int windowH, int imageW, int imageH);
-#endif
+#include "constants.h"
+
+MANDELBROT_API void interactiveMain(int imageW, int imageH);
 
 #endif
 #endif
