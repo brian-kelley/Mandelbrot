@@ -62,7 +62,7 @@ void resetView()
   loadValue(&targetY, 0);
 }
 
-extern "C" void interactiveMain(int imageW, int imageH)
+void interactiveMain(int imageW, int imageH)
 {
   w = imageW;
   h = imageH + 200;
@@ -211,7 +211,8 @@ extern "C" void interactiveMain(int imageW, int imageH)
       if(inputIters > 1 && inputIters < 500000)
       {
         maxiter = inputIters;
-        imageStale = true;
+        if(inputIters > maxiter)
+          imageStale = true;
       }
     }
     //Color function selector

@@ -123,7 +123,7 @@ int main(int argc, const char** argv)
       printf("Will write target location to \"%s\"\n", targetCache);
     printf("Will output %ix%i images.\n", imageWidth, imageHeight);
   }
-  prec = 3;
+  prec = 1;
   setFPPrec(prec);
   pstride = FPCtorValue(prec, 4.0 / imageWidth);
   targetX = FPCtor(prec);

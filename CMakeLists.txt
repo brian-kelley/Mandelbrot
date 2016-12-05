@@ -35,7 +35,6 @@ if(INTERACTIVE)
     fixedpoint.c
     specialMath.c
     image.c
-    boundary.c
     test.c
     lodepng.c
     interactive.cpp
@@ -56,7 +55,6 @@ else()
     fixedpoint.c
     specialMath.c
     image.c
-    boundary.c
     test.c
     lodepng.c
   )

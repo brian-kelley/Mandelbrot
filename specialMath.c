@@ -85,45 +85,6 @@ float fp##n(FP* restrict real, FP* restrict imag) \
   return -1; \
 }
 
-/*
-#define IMPL_REG_KERNEL(n) \
-float fp##n(FP* restrict real, FP* restrict imag) \
-{ \
-  FP##n cr = load##n(real); \
-  FP##n ci = load##n(imag); \
-  FP##n zr = zero##n(); \
-  FP##n zi = zero##n(); \
-  FP##n zr2, zi2, zri, mag; \
-  u64 four; \
-  { \
-    MAKE_STACK_FP_PREC(temp, 1); \
-    loadValue(&temp, 4); \
-    four = temp.value.val[0]; \
-    printf("four high word: %016llx\n", four); \
-  } \
-  for(int i = 0; i < 1000; i++) \
-  { \
-    printf("iter %5i: z = %.3f + %0.3fi\n", i, getVal##n(zr), getVal##n(zi)); \
-    zr2 = mul##n(zr, zr); \
-    zri = mul##n(zr, zi); \
-    zri = add##n(zri, zri); \
-    zi2 = mul##n(zi, zi); \
-    mag = add##n(zr2, zi2); \
-    if(mag.w[0] >= four) \
-    { \
-      printf(">>>> mag = %f so breaking.\n", getVal##n(mag)); \
-      printf("mag words: "); \
-      print##n(mag); \
-      puts(""); \
-      return i; \
-    } \
-    zr = add##n(sub##n(zr2, zi2), cr); \
-    zi = add##n(zri, ci); \
-  } \
-  return -1; \
-}
-*/
-
 #define IMPL_SMOOTH_KERNEL(n) \
 float fp##n##s(FP* restrict real, FP* restrict imag) \
 { \
@@ -148,10 +109,6 @@ float fp##n##s(FP* restrict real, FP* restrict imag) \
     mag = add##n(zr2, zi2); \
     if(mag.w[0] >= four) \
     { \
-      printf(">>>> mag = %f so breaking.\n", getVal##n(mag)); \
-      printf("mag words: "); \
-      print##n(mag); \
-      puts(""); \
       break; \
     } \
     zr = add##n(sub##n(zr2, zi2), cr); \

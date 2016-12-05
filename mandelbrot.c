@@ -157,38 +157,6 @@ void colorBasicLog()
   colorLogCyclic(&im);
 }
 
-/*
-void colorBasicExpo()
-{
-  Uint32 colors[] =
-  {
-    0xFF0000FF, //red
-    0xFF8800FF, //orange
-    0xFFFF00FF, //yellow
-    0x00BB00FF, //green
-    0x0000FFFF, //blue
-    0x550055FF  //dark purple
-  };
-  SET_UP_COLORMAP;
-  colorExpoCyclic(&im, 0.6);
-}
-
-void colorBasicLog()
-{
-  Uint32 colors[] =
-  {
-    0xFF0000FF, //red
-    0xFF8800FF, //orange
-    0xFFFF00FF, //yellow
-    0x00BB00FF, //green
-    0x0000FFFF, //blue
-    0x550055FF  //dark purple
-  };
-  SET_UP_COLORMAP;
-  colorLogCyclic(&im);
-}
-*/
-
 void colorGalaxy()
 {
   Uint32 colors[] =
@@ -216,6 +184,8 @@ u64 totalIters()
     else
       n += iters[i];
   }
+  if(supersample)
+    n *= 4;
   return n;
 }
 
@@ -237,7 +207,6 @@ float getPixelConvRate(int x, int y)
   if(iters[x + y * winw] != NOT_COMPUTED)
     return iters[x + y * winw];
   float rv = NOT_COMPUTED;
-  /*
   if(ps > EPS_64)
   {
     //single pixel, double prec
@@ -255,7 +224,6 @@ float getPixelConvRate(int x, int y)
       rv = escapeTime80(tx + (x - winw / 2) * ps, ty + (y - winh / 2) * ps);
   }
   else
-  */
   {
     //single pixel, arb. precision
     MAKE_STACK_FP(cr);
@@ -546,7 +514,6 @@ void drawBuf(float scale)
   {
     workerFunc = simd64Worker;
   }
-  printf("Using special #%i kernel.\n", prec);
   pthread_t* threads = alloca(nworkers * sizeof(pthread_t));
   for(int i = 0; i < nworkers; i++)
     pthread_create(&threads[i], NULL, workerFunc, NULL);
