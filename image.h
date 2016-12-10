@@ -26,10 +26,6 @@ typedef double (*Mapping) (double orig);
 
 typedef struct
 {
-  float* iters;
-  Uint32* fb;
-  int w;
-  int h;
   Uint32* palette;
   int numColors;
   double cycles;     //number of repeats of the colormap in one image
@@ -43,7 +39,7 @@ void reduceIters(int* iterbuf, int diffCap, int w, int h);
 //k is a float/double between 0 and 1
 Uint32 lerp(Uint32 c1, Uint32 c2, double k);
 
-void handleNonColored(Image* im);
+void handleNonColored();
 
 float getPercentileValue(float* buf, int w, int h, float proportion);
 

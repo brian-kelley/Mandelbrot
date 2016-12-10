@@ -19,7 +19,7 @@ static int colorFuncSel;
 //whether the image needs to be updated before next render
 static bool imageStale;
 
-void textureClear()
+static void textureClear()
 {
   for(int i = 0; i < tw * th; i++)
   {
@@ -32,7 +32,7 @@ void textureClear()
 }
 
 //internal interactive functions
-void genTexture()
+static void recomputeImage()
 {
   if(!imageStale)
     return;
@@ -49,7 +49,25 @@ void genTexture()
   imageStale = false;
 }
 
-void resetView()
+static void recomputeFramebuffer()
+{
+  if(imageStale)
+  {
+    recomputeImage();
+    return;
+  }
+  colorMap();
+  for(int i = 0; i < tw * th; i++)
+  {
+    Uint32 temp = frameBuf[i]; 
+    frameBuf[i] = ((temp & 0xFF000000) >> 24) | ((temp & 0xFF0000) >> 8) | ((temp & 0xFF00) << 8) | ((temp & 0xFF) << 24);
+  }
+  glBindTexture(GL_TEXTURE_2D, textureID);
+  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
+  assert(!glGetError());
+}
+
+static void resetView()
 {
   zoomDepth = 0;
   maxiter = 1000;
@@ -139,7 +157,7 @@ void interactiveMain(int imageW, int imageH)
     //other corner of image
     ImVec2 tex2((float) tw / tsize, (float) th / tsize);
     imgSize = ImVec2(tw, th);
-    genTexture();
+    recomputeImage();
     ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
     ImGui::Columns(2);
     //get cursor pos within image
@@ -230,13 +248,19 @@ void interactiveMain(int imageW, int imageH)
           colorMap = colorBasicLog;
         else if(colorFuncSel == 2)
           colorMap = colorBasicExpo;
-        imageStale = true;
+        //don't recompute iters, just update colors
+        recomputeFramebuffer();
       }
     }
     //Iter scaling
+    float oldIterScale = iterScale;
     if(ImGui::InputFloat("Color Scale", &iterScale))
     {
-      imageStale = true;
+      //Sanity check
+      if(iterScale == 0 || iterScale > 1e4)
+        iterScale = oldIterScale;
+      else
+        imageStale = true;
     }
     //Target cache saving
     {

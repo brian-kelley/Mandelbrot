@@ -35,6 +35,7 @@ if(INTERACTIVE)
     fixedpoint.c
     specialMath.c
     image.c
+    bitset.c
     test.c
     lodepng.c
     interactive.cpp
@@ -42,12 +43,12 @@ if(INTERACTIVE)
     imgui/imgui_draw.cpp
     imgui/imgui_impl_sdl.cpp
   )
-  message("** GUI support enabled")
+  message("** GUI support enabled **")
   add_definitions(-DINTERACTIVE)
   target_link_libraries(Mandelbrot ${SDL2_LIB} ${GL_LIB} ${PTHREAD_LIB})
 else()
-  message("** Command line interface only")
-  message("** Install SDL2 for GUI support")
+  message("** Command line interface only  **")
+  message("** Install SDL2 for GUI support **")
   add_executable(Mandelbrot
     main.c
     mandelbrot.c
@@ -55,6 +56,7 @@ else()
     fixedpoint.c
     specialMath.c
     image.c
+    bitset.c
     test.c
     lodepng.c
   )

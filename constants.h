@@ -3,6 +3,7 @@
 
 #include "stdio.h"
 #include "stdlib.h"
+#include "string.h"
 
 typedef unsigned char u8;
 typedef unsigned u32;
@@ -40,6 +41,7 @@ typedef __int128 s128;
 #define CRASH(msg) {printf("Error: " msg " in file " __FILE__ ", line %i\n", __LINE__); exit(1);}
 
 extern float* iters;
+extern unsigned* frameBuf;
 extern int winw;
 extern int winh;
 extern int maxiter;

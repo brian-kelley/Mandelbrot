@@ -14,6 +14,7 @@
 #include "image.h"
 #include "timing.h"
 #include "x86intrin.h"
+#include "bitset.h"
 
 typedef void (*ColorMap)(void);
 
@@ -21,6 +22,7 @@ extern int winw;
 extern int winh;
 extern float* iters;
 extern unsigned* frameBuf;
+extern int* workq;
 extern int lastOutline;
 extern FP targetX;
 extern FP targetY;
@@ -38,6 +40,8 @@ extern int pixelsComputed;
 extern const char* outputDir;
 extern pthread_t monitor;
 extern ColorMap colorMap;
+extern Bitset computed;
+extern int refinement;   //0 = full image, ceil(log(winw)) = single pixels
 
 //Compute framebuffer (and colors if applicable)
 MANDELBROT_API void drawBuf(float scale);
@@ -71,7 +75,11 @@ MANDELBROT_API void downgradePrec(bool interactive);  //downgrade precision if p
 MANDELBROT_API void upgradeIters();    //update iteration cap between zooms
 MANDELBROT_API void downgradeIters();    //update iteration cap between zooms
 
+MANDELBROT_API void refinementStep();
+
 MANDELBROT_API const char* getPrecString();
+
+MANDELBROT_API void abortWorkers();
 
 float ssValue(float* outputs);
 

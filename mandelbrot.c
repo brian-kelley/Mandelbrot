@@ -4,8 +4,12 @@
 
 int winw;
 int winh;
-float* iters;
-unsigned* frameBuf;
+float* iters;             //escape time count for whole image
+unsigned* frameBuf;       //RGBA 8888 colors for whole image
+Bitset computed;          //Bit i is whether pixel i is known
+int* workq;               //simple "queue" of pixels to compute for a refinement step
+_Atomic int workCounter;  //index of next work unit
+int workSize;             //number of pixels in workq
 int lastOutline;
 FP targetX;
 FP targetY;
@@ -23,10 +27,9 @@ int pixelsComputed;
 const char* outputDir;
 pthread_t monitor;
 ColorMap colorMap = colorSunset;
-
-// Fetch + add to get next work unit
-// Set to 0 by main thread at frame start
-_Atomic int workerIndex;
+int refinement;
+static bool runWorkers;
+_Atomic int savings;
 
 void* monitorFunc(void* unused)
 {
@@ -34,7 +37,7 @@ void* monitorFunc(void* unused)
   double width = MONITOR_WIDTH - 2;
   while(progress < width)
   {
-    progress = width * atomic_load_explicit(&workerIndex, memory_order_relaxed) / (winw * winh);
+    progress = width * atomic_load_explicit(&workCounter, memory_order_relaxed) / (winw * winh);
     //move to start of line
     putchar('\r');
     putchar('[');
@@ -97,10 +100,6 @@ void writeImage()
 //Just need Uint32 array colors, and double array weights
 #define SET_UP_COLORMAP \
   Image im; \
-  im.iters = iters; \
-  im.fb = frameBuf; \
-  im.w = winw; \
-  im.h = winh; \
   im.palette = colors; \
   im.numColors = sizeof(colors) / sizeof(Uint32); \
   im.cycles = 1; \
@@ -353,18 +352,47 @@ float getPixelConvRateSS(int x, int y)
   return rv;
 }
 
+//Get 1 pixel to work on, (return false if no work left)
+static bool fetchWorkPixel(int* px)
+{
+  int work = atomic_fetch_add_explicit(&workCounter, 1, memory_order_relaxed);
+  if(workSize == 0 && work >= winw * winh)
+    return false;
+  else if(workSize != 0 && work >= workSize)
+    return false;
+  if(workSize == 0)
+  {
+    //work is already the pixel index
+    *px = work;
+  }
+  else
+  {
+    //work is an index in workq, get the pixel index
+    *px = workq[work];
+  }
+  return true;
+}
+
+void abortWorkers()
+{
+  runWorkers = false;
+}
+
 void* fpWorker(void* unused)
 {
   while(true)
   {
-    int work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
-    if(work >= winw * winh)
-      break;
-    iters[work] = NOT_COMPUTED;
+    if(!runWorkers)
+      return NULL;
+    int work;
+    if(!fetchWorkPixel(&work))
+      return NULL;
     if(!supersample)
       getPixelConvRate(work % winw, work / winw);
     else
       getPixelConvRateSS(work % winw, work / winw);
+    //mark pixel as computed
+    setBit(&computed, work, 1);
   }
   return NULL;
 }
@@ -379,19 +407,35 @@ void* simd32Worker(void* unused)
   float output[8];
   while(true)
   {
-    int work;
+    if(!runWorkers)
+      return NULL;
     if(!supersample)
     {
+      int work[8];
       //get 8 pixels' worth of work
-      //note: memory_order_relaxed because it doesn't matter which thread gets which work
-      work = atomic_fetch_add_explicit(&workerIndex, 8, memory_order_relaxed);
-      //check for all work being done (wait for join)
-      if(work >= winw * winh)
-        return NULL;
       for(int i = 0; i < 8; i++)
       {
-        crFloat[i] = r0 + (ps * ((work + i) % winw));
-        ciFloat[i] = i0 + (ps * ((work + i) / winw));
+        if(!fetchWorkPixel(work + i))
+        {
+          if(i == 0)
+          {
+            //no work left to do
+            return NULL;
+          }
+          else
+            work[i] = -1;
+        }
+        if(work[i] >= 0)
+        {
+          crFloat[i] = r0 + (ps * (work[i] % winw));
+          ciFloat[i] = i0 + (ps * (work[i] / winw));
+        }
+        else
+        {
+          //dummy work that diverges immediately
+          crFloat[i] = 4;
+          ciFloat[i] = 4;
+        }
       }
       if(smooth)
         escapeTimeVec32Smooth(output, crFloat, ciFloat);
@@ -399,32 +443,52 @@ void* simd32Worker(void* unused)
         escapeTimeVec32(output, crFloat, ciFloat);
       for(int i = 0; i < 8; i++)
       {
-        if(work + i < winw * winh)
+        if(work[i] >= 0 && work[i] + i < winw * winh)
         {
-          iters[work + i] = output[i];
+          iters[work[i]] = output[i];
+          setBit(&computed, work[i], 1);
         }
       }
     }
     else
     {
       //get 2 pixels' worth of work, which is 8 iteration points
-      work = atomic_fetch_add_explicit(&workerIndex, 2, memory_order_relaxed);
-      if(work >= winw * winh)
-        return NULL;
+      int work[2];
       for(int i = 0; i < 2; i++)
       {
+        if(!fetchWorkPixel(work + i))
+        {
+          if(i == 0)
+            return NULL;
+          else
+            work[i] = -1;
+        }
         //get pixel center
-        float realBase = r0 + (ps * ((work + i) % winw));
-        float imagBase = i0 + (ps * ((work + i) / winw));
+        float realBase = r0 + (ps * (work[i] % winw));
+        float imagBase = i0 + (ps * (work[i] / winw));
         int offset = i * 4;
-        crFloat[offset + 0] = realBase - ps / 4;
-        crFloat[offset + 2] = crFloat[offset + 0];
-        crFloat[offset + 1] = realBase + ps / 4;
-        crFloat[offset + 3] = crFloat[offset + 1];
-        ciFloat[offset + 0] = imagBase - ps / 4;
-        ciFloat[offset + 1] = ciFloat[offset + 0];
-        ciFloat[offset + 2] = imagBase + ps / 4;
-        ciFloat[offset + 3] = ciFloat[offset + 2];
+        if(work[i] >= 0)
+        {
+          crFloat[offset + 0] = realBase - ps / 4;
+          crFloat[offset + 2] = crFloat[offset + 0];
+          crFloat[offset + 1] = realBase + ps / 4;
+          crFloat[offset + 3] = crFloat[offset + 1];
+          ciFloat[offset + 0] = imagBase - ps / 4;
+          ciFloat[offset + 1] = ciFloat[offset + 0];
+          ciFloat[offset + 2] = imagBase + ps / 4;
+          ciFloat[offset + 3] = ciFloat[offset + 2];
+        }
+        else
+        {
+          crFloat[offset + 0] = 4;
+          crFloat[offset + 2] = 4;
+          crFloat[offset + 1] = 4;
+          crFloat[offset + 3] = 4;
+          ciFloat[offset + 0] = 4;
+          ciFloat[offset + 1] = 4;
+          ciFloat[offset + 2] = 4;
+          ciFloat[offset + 3] = 4;
+        }
       }
       if(smooth)
         escapeTimeVec32Smooth(output, crFloat, ciFloat);
@@ -432,8 +496,11 @@ void* simd32Worker(void* unused)
         escapeTimeVec32(output, crFloat, ciFloat);
       for(int i = 0; i < 2; i++)
       {
-        if(work + i < winw * winh)
-          iters[work + i] = ssValue(output + 4 * i);
+        if(work[i] >= 0 && work[i] < winw * winh)
+        {
+          iters[work[i]] = ssValue(output + 4 * i);
+          setBit(&computed, work[i], 1);
+        }
       }
     }
   }
@@ -450,19 +517,32 @@ void* simd64Worker(void* unused)
   float output[4];
   while(true)
   {
-    int work;
+    if(!runWorkers)
+    {
+      return NULL;
+    }
     if(!supersample)
     {
-      //get 8 pixels' worth of work and update work index simultaneously
-      //memory_order_relaxed because it doesn't matter which thread gets which work
-      work = atomic_fetch_add_explicit(&workerIndex, 4, memory_order_relaxed);
-      //check for all work being done (wait for join)
-      if(work >= winw * winh)
-        return NULL;
+      int work[4];
       for(int i = 0; i < 4; i++)
       {
-        crDouble[i] = r0 + (ps * ((work + i) % winw));
-        ciDouble[i] = i0 + (ps * ((work + i) / winw));
+        if(!fetchWorkPixel(work + i))
+        {
+          if(i == 0)
+            return NULL;
+          else
+            work[i] = -1;
+        }
+        if(i >= 0)
+        {
+          crDouble[i] = r0 + (ps * (work[i] % winw));
+          ciDouble[i] = i0 + (ps * (work[i] / winw));
+        }
+        else
+        {
+          crDouble[i] = 4;
+          ciDouble[i] = 4;
+        }
       }
       if(!smooth)
         escapeTimeVec64(output, crDouble, ciDouble);
@@ -470,14 +550,17 @@ void* simd64Worker(void* unused)
         escapeTimeVec64Smooth(output, crDouble, ciDouble);
       for(int i = 0; i < 4; i++)
       {
-        if(work + i < winw * winh)
-          iters[work + i] = output[i];
+        if(work[i] >= 0 && work[i] < winw * winh)
+        {
+          iters[work[i]] = output[i];
+          setBit(&computed, work[i], 1);
+        }
       }
     }
     else
     {
-      work = atomic_fetch_add_explicit(&workerIndex, 1, memory_order_relaxed);
-      if(work >= winw * winh)
+      int work;
+      if(!fetchWorkPixel(&work))
         return NULL;
       double realBase = r0 + (ps * (work % winw));
       double imagBase = i0 + (ps * (work / winw));
@@ -494,37 +577,154 @@ void* simd64Worker(void* unused)
       else
         escapeTimeVec64Smooth(output, crDouble, ciDouble);
       iters[work] = ssValue(output);
+      setBit(&computed, work, 1);
     }
   }
   return NULL;
 }
 
-void drawBuf(float scale)
+static void launchWorkers()
 {
-  workerIndex = 0;
-  //machine epsilon values from wikipedia
-  float ps = getValue(&pstride);
+  workCounter = 0;
   void* (*workerFunc)(void*) = fpWorker;
   int nworkers = numThreads;
+  //select kernel based on required precision
+  long double ps = getValue(&pstride);
   if(ps >= EPS_32)
-  {
     workerFunc = simd32Worker;
-  }
   else if(ps >= EPS_64)
-  {
     workerFunc = simd64Worker;
-  }
+  //note: all threads should finish at almost exactly the same time
   pthread_t* threads = alloca(nworkers * sizeof(pthread_t));
   for(int i = 0; i < nworkers; i++)
     pthread_create(&threads[i], NULL, workerFunc, NULL);
   for(int i = 0; i < nworkers; i++)
     pthread_join(threads[i], NULL);
+}
+
+void drawBuf(float scale)
+{
+  savings = 0;
+  clearBitset(&computed);
+  for(int i = 0; i < winw * winh; i++)
+    iters[i] = -2;
+  runWorkers = true;
+  /*
+  refinement = 0;
+  while(refinement != -1)
+    refinementStep();
+  */
+  workSize = 0;
+  launchWorkers();
   pixelsComputed = winw * winh;
   if(scale != 1)
     scaleIters(scale);
   if(frameBuf)
     colorMap();
   putchar('\r');
+  printf("Saved %.2f%% of pixels.\n", (double) savings / (winw * winh));
+}
+
+void refinementStep()
+{
+  printf("\n *** Doing refinement step %i ***\n", refinement);
+  workSize = 0;
+  //iterate over blocks for the current refinement level
+  //note: important not to include duplicate pixels in workq
+  //positions = (winw / 2^refinement * i) = (winw * i) >> refinement
+  int prevI = -1;
+  int prevJ = -1;
+  //iterate over blocks
+  for(int bi = 0; bi <= (1 << refinement); bi++)
+  {
+    int lox = (winw * bi) >> refinement;
+    int hix = (winw * (bi + 1)) >> refinement;
+    for(int bj = 0; bj <= (1 << refinement); bj++)
+    {
+      //printf("Computing boundary of block %i, %i\n", bi, bj);
+      int loy = (winh * bj) >> refinement;
+      int hiy = (winh * (bj + 1)) >> refinement;
+      //printf("block from pixel %i, %i to %i, %i\n", lox, loy, hix, hiy);
+      //block collided with previous block
+      /*
+      if(lox == prevI)
+        continue;
+      if(loy == prevJ)
+        continue;
+      */
+      prevI = lox;
+      prevJ = loy;
+      //go along upper and left boundary of block, add each non-computed pixel to workq
+      for(int x = lox; x < hix; x++)
+      {
+        if(!getBit(&computed, x + loy * winw) && x < winw)
+          workq[workSize++] = x + loy * winw;
+      }
+      for(int y = loy + 1; y < hiy; y++)
+      {
+        if(!getBit(&computed, lox + y * winw) && y < winh)
+          workq[workSize++] = lox + y * winw;
+      }
+    }
+  }
+  printf("must compute %i pixels for level %i.\n", workSize, refinement);
+  //do the work
+  launchWorkers();
+  //iterate over blocks again & check if boundary is all one value
+  //if so, flood fill block with the value & mark interior as computed
+  for(int bi = 0; bi < (1 << refinement); bi++)
+  {
+    int lox = (winw * bi) >> refinement;
+    int hix = (winw * (bi + 1)) >> refinement;
+    if(hix - lox <= 2)
+      continue;
+    for(int bj = 0; bj < (1 << refinement); bj++)
+    {
+      int loy = (winh * bj) >> refinement;
+      int hiy = (winh * (bj + 1)) >> refinement;
+      if(hiy - loy <= 2)
+        continue;
+      //go along boundary of block
+      float val = iters[lox + loy * winw];
+      bool allSame = true;
+      for(int x = lox; x < hix; x++)
+      {
+        if(iters[x + loy * winw] != val || iters[x + (hiy - 1) * winw] != val)
+        {
+          allSame = false;
+          break;
+        }
+      }
+      for(int y = loy + 1; y < hiy - 1; y++)
+      {
+        if(iters[lox + y * winw] != val || iters[hix - 1 + y * winw] != val)
+        {
+          allSame = false;
+          break;
+        }
+      }
+      if(allSame)
+      {
+        //fill block
+        for(int x = lox + 1; x < hix - 1; x++)
+        {
+          for(int y = loy + 1; y < hiy - 1; y++)
+          {
+            iters[x + y * winw] = val;
+            atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
+            setBit(&computed, x + y * winw, 1);
+          }
+        }
+      }
+    }
+  }
+  if((1 << refinement) >= winw && (1 << refinement) >= winh)
+  {
+    //done
+    refinement = -1;
+    return;
+  }
+  refinement++;
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)

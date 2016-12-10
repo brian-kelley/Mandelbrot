@@ -67,14 +67,14 @@ static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
   return 0;
 }
 
-void handleNonColored(Image* im)
+void handleNonColored()
 {
-  for(int i = 0; i < im->w * im->h; i++)
+  for(int i = 0; i < winw * winh; i++)
   {
-    if(im->iters[i] == -1)
-      im->fb[i] = 0xFF;
-    else if(im->iters[i] < 0)
-      im->fb[i] = 0x999999FF;
+    if(iters[i] == -1)
+      frameBuf[i] = 0xFF;
+    else if(iters[i] < 0)
+      frameBuf[i] = 0x999999FF;
   }
 }
 
@@ -120,26 +120,26 @@ static double logMapFunc(double val)
 
 static void applyCyclicMapping(Image* im, Mapping func)
 {
-  handleNonColored(im);
+  handleNonColored();
   int minVal = INT_MAX;
-  for(int i = 0; i < im->w * im->h; i++)
+  for(int i = 0; i < winw * winh; i++)
   {
-    if(im->iters[i] > 0 && im->iters[i] < minVal)
-      minVal = im->iters[i];
+    if(iters[i] > 0 && iters[i] < minVal)
+      minVal = iters[i];
   }
-  for(int i = 0; i < im->w * im->h; i++)
+  for(int i = 0; i < winw * winh; i++)
   {
-    if(im->iters[i] >= 0)
-      im->iters[i] = func(im->iters[i]);
+    if(iters[i] >= 0)
+      imgScratch[i] = func(iters[i]);
     else
-      im->iters[i] = -1.0;
+      imgScratch[i] = -1.0;
   }
   double scale = 0.05; //(im->period * im->cycles) / (cap - minMapped);
   double perSegment = im->period / im->cycles / im->numColors;
-  for(int i = 0; i < im->w * im->h; i++)
+  for(int i = 0; i < winw * winh; i++)
   {
     //subtract 1 so that effective min value maps to 0 (origin in color cycle)
-    double val = im->iters[i] * scale;
+    double val = imgScratch[i] * scale;
     if(val >= 0)
     {
       int segment = val / perSegment;
@@ -147,7 +147,7 @@ static void applyCyclicMapping(Image* im, Mapping func)
       int lowColorIndex = segment % im->numColors;
       int highColorIndex = (segment + 1) % im->numColors;
       //lerp between low and high color
-      im->fb[i] = lerp(im->palette[lowColorIndex], im->palette[highColorIndex], lerpK);
+      frameBuf[i] = lerp(im->palette[lowColorIndex], im->palette[highColorIndex], lerpK);
     }
   }
 }
@@ -176,20 +176,20 @@ void colorHistWeighted(Image* im, double* weights)
 {
   //histogram proportion (i.e. quarter of all is 0.25) multiplied by
   int* pixelList = (int*) imgScratch;
-  for(int i = 0; i < im->w * im->h; i++)
+  for(int i = 0; i < winw * winh; i++)
     pixelList[i] = i;
   //sort pixelList (iters indices) according to the iter values
-  qsort(pixelList, im->w * im->h, sizeof(int), pixelCompare);
+  qsort(pixelList, winw * winh, sizeof(int), pixelCompare);
   if(iters[pixelList[0]] == -1)
   {
     //something wrong with computation, but fill screen with black and return
-    for(int i = 0; i < im->w * im->h; i++)
-      im->fb[i] = 0xFF;
+    for(int i = 0; i < winw * winh; i++)
+      frameBuf[i] = 0xFF;
     return;
   }
   //get # of diverged pixels
-  int diverged = im->w * im->h;
-  while(im->iters[pixelList[diverged - 1]] == -1)
+  int diverged = winw * winh;
+  while(iters[pixelList[diverged - 1]] == -1)
     diverged--;
   int* colorOffsets = alloca(im->numColors * sizeof(int));
   double* normalWeights = alloca(im->numColors * sizeof(double));
@@ -211,15 +211,15 @@ void colorHistWeighted(Image* im, double* weights)
   int firstOfValue = 0; //index of first first pixel encountered with ith value
   for(int i = 0; i < diverged; i++)
   {
-    if(im->iters[pixelList[i]] != im->iters[pixelList[firstOfValue]])
+    if(iters[pixelList[i]] != iters[pixelList[firstOfValue]])
       firstOfValue = i;
     while(colorOffsets[lowerColor + 1] <= firstOfValue)
       lowerColor++;
     int colorLo = colorOffsets[lowerColor];
     int colorHi = colorOffsets[lowerColor + 1];
-    im->fb[pixelList[i]] = lerp(im->palette[lowerColor], im->palette[lowerColor + 1],
+    frameBuf[pixelList[i]] = lerp(im->palette[lowerColor], im->palette[lowerColor + 1],
         (double) (firstOfValue - colorLo) / (colorHi - colorLo));
   }
-  handleNonColored(im);
+  handleNonColored();
 }
 

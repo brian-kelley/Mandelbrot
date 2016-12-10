@@ -150,6 +150,8 @@ int main(int argc, const char** argv)
   iters = malloc(winw * winh * sizeof(float));
   frameBuf = malloc(winw * winh * sizeof(unsigned));
   imgScratch = malloc(winw * winh * sizeof(float));
+  computed = BitsetCtor(winw * winh);
+  workq = malloc(winw * winh * sizeof(int));
   if(!interactive)
     printf("Will zoom towards %.19Lf, %.19Lf\n", getValue(&targetX), getValue(&targetY));
   if(interactive)
