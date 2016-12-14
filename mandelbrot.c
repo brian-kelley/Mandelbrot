@@ -28,7 +28,7 @@ const char* outputDir;
 pthread_t monitor;
 ColorMap colorMap = colorSunset;
 int refinement;
-static bool runWorkers;
+bool runWorkers;
 _Atomic int savings;
 
 void* monitorFunc(void* unused)
@@ -605,7 +605,6 @@ static void launchWorkers()
 void drawBuf(float scale)
 {
   savings = 0;
-  clearBitset(&computed);
   for(int i = 0; i < winw * winh; i++)
     iters[i] = -2;
   runWorkers = true;

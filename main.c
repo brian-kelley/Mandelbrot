@@ -176,6 +176,7 @@ int main(int argc, const char** argv)
     u64 startCycles = getTime();
     time_t startTime = time(NULL);
     pthread_create(&monitor, NULL, monitorFunc, NULL);
+    clearBitset(&computed);
     drawBuf(1);
     u64 nclocks = getTime() - startCycles;
     int sec = time(NULL) - startTime;

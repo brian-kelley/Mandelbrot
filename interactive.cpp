@@ -18,7 +18,11 @@ static float iterScale;
 static int colorFuncSel;
 //whether the image needs to be updated before next render
 static bool imageStale;
+static bool terminating;
+static bool frameBufStale;
 
+//clear image (both frameBuf and the GL texture) to black
+//called once in interactiveMain before main loop
 static void textureClear()
 {
   for(int i = 0; i < tw * th; i++)
@@ -31,31 +35,9 @@ static void textureClear()
   imageStale = true;
 }
 
-//internal interactive functions
-static void recomputeImage()
-{
-  if(!imageStale)
-    return;
-  drawBuf(iterScale);
-  //fix byte order
-  for(int i = 0; i < tw * th; i++)
-  {
-    Uint32 temp = frameBuf[i]; 
-    frameBuf[i] = ((temp & 0xFF000000) >> 24) | ((temp & 0xFF0000) >> 8) | ((temp & 0xFF00) << 8) | ((temp & 0xFF) << 24);
-  }
-  glBindTexture(GL_TEXTURE_2D, textureID);
-  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
-  assert(!glGetError());
-  imageStale = false;
-}
-
+//update frameBuf using iters
 static void recomputeFramebuffer()
 {
-  if(imageStale)
-  {
-    recomputeImage();
-    return;
-  }
   colorMap();
   for(int i = 0; i < tw * th; i++)
   {
@@ -65,6 +47,33 @@ static void recomputeFramebuffer()
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
   assert(!glGetError());
+}
+
+//internal interactive functions
+static void* imageThreadRoutine(void* unused)
+{
+  imageStale = true;
+  while(!terminating)
+  {
+    if(imageStale)
+    {
+      clearBitset(&computed);
+      drawBuf(iterScale);
+      if(!runWorkers)
+      {
+        //drawBuf interrupted, restart
+        runWorkers = true;
+        continue;
+      }
+      imageStale = false;
+      frameBufStale = true;
+    }
+    else
+    {
+      usleep(16667);
+    }
+  }
+  return NULL;
 }
 
 static void resetView()
@@ -88,6 +97,8 @@ void interactiveMain(int imageW, int imageH)
   th = imageH;
   iterScale = 1;
   colorFuncSel = 0;
+  char target[64];
+  strcpy(target, "target.bin");
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
   {
     puts("Failed to initialize SDL.");
@@ -122,7 +133,17 @@ void interactiveMain(int imageW, int imageH)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tsize, tsize,
         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   }
+  //compute entire buffer immediately
   textureClear();
+  //create asynchronous image generating threadw
+  //always running along main thread
+  //runs drawBuf when imageUpdate is true, otherwise sleeps for 16.7 ms
+  //if main thread gets update event during image computation, drawBuf is
+  //interrupted so that imageThread waits until ready to work again
+  terminating = false;
+  pthread_t imageThread;
+  pthread_create(&imageThread, NULL, imageThreadRoutine, NULL);
+  frameBufStale = true;
   while(true)
   {
     usleep(16667);
@@ -135,7 +156,11 @@ void interactiveMain(int imageW, int imageH)
         quit = true;
     }
     if(quit)
+    {
+      terminating = true; //signal imageThread to stop working
+      pthread_join(imageThread, NULL);
       break;
+    }
     ImGui_ImplSdl_NewFrame(win);
     //Have main ImGui frame fill SDL window
     SDL_GetWindowSize(win, &w, &h);
@@ -157,7 +182,11 @@ void interactiveMain(int imageW, int imageH)
     //other corner of image
     ImVec2 tex2((float) tw / tsize, (float) th / tsize);
     imgSize = ImVec2(tw, th);
-    recomputeImage();
+    if(frameBufStale)
+    {
+      recomputeFramebuffer();
+      frameBufStale = false;
+    }
     ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
     ImGui::Columns(2);
     //get cursor pos within image
@@ -222,16 +251,13 @@ void interactiveMain(int imageW, int imageH)
       imageStale = true;
     if(ImGui::Checkbox("Supersampling", &supersample) && supersample)
       imageStale = true;
-    int inputIters = maxiter;
     ImGui::NextColumn();
-    if(ImGui::InputInt("Max Iters", &inputIters))
+    float inputIters = maxiter;
+    if(ImGui::SliderFloat("Max Iters", &inputIters, 100, 1000000, "%.0f", 4))
     {
-      if(inputIters > 1 && inputIters < 500000)
-      {
-        maxiter = inputIters;
-        if(inputIters > maxiter)
-          imageStale = true;
-      }
+      if(inputIters > maxiter)
+        imageStale = true;
+      maxiter = inputIters;
     }
     //Color function selector
     {
@@ -242,30 +268,31 @@ void interactiveMain(int imageW, int imageH)
       const char* options[] = {"Histogram", "Logarithmic", "Exponential"};
       if(ImGui::ListBox("Color Function", &colorFuncSel, options, 3))
       {
-        if(colorFuncSel == 0)
+        if(colorFuncSel == HIST)
           colorMap = colorSunset;
-        else if(colorFuncSel == 1)
+        else if(colorFuncSel == LOG)
           colorMap = colorBasicLog;
-        else if(colorFuncSel == 2)
+        else if(colorFuncSel == EXPO)
           colorMap = colorBasicExpo;
         //don't recompute iters, just update colors
         recomputeFramebuffer();
       }
     }
     //Iter scaling
-    float oldIterScale = iterScale;
-    if(ImGui::InputFloat("Color Scale", &iterScale))
+    float oldScale = iterScale;
+    if(ImGui::SliderFloat("Color Scale", &iterScale, 0.001, 1000, "%.3f", 6))
     {
-      //Sanity check
-      if(iterScale == 0 || iterScale > 1e4)
-        iterScale = oldIterScale;
-      else
-        imageStale = true;
+      if(!imageStale)
+      {
+        for(int i = 0; i < winw * winh; i++)
+        {
+          if(iters[i] >= 0)
+            iters[i] *= (iterScale / oldScale);
+        }
+      }
     }
     //Target cache saving
     {
-      char target[64];
-      strcpy(target, "target.bin");
       ImGui::InputText("Target Cache", target, 64);
       if(ImGui::Button("Save Target"))
         saveTargetCache(target);

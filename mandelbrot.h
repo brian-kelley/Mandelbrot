@@ -41,7 +41,8 @@ extern const char* outputDir;
 extern pthread_t monitor;
 extern ColorMap colorMap;
 extern Bitset computed;
-extern int refinement;   //0 = full image, ceil(log(winw)) = single pixels
+extern int refinement;    //0 = full image, ceil(log(winw)) = single pixels
+extern bool runWorkers;   //used to interrupt worker threads in interactive mode
 
 //Compute framebuffer (and colors if applicable)
 MANDELBROT_API void drawBuf(float scale);
