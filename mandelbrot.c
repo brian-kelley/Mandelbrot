@@ -625,7 +625,7 @@ void refinementStep()
       //go along upper and left boundary of block, add each non-computed pixel to workq
       for(int x = lox; x < hix; x++)
       {
-        if(getBit(&computed, x + loy * winw) == 0 && x < winw)
+        if(!getBit(&computed, x + loy * winw) && x < winw)
         {
           workq[workSize++] = x + loy * winw;
           //mark pixel as computed because it will actually be computed before it is read again
@@ -634,7 +634,7 @@ void refinementStep()
       }
       for(int y = loy + 1; y < hiy - 1; y++)
       {
-        if(getBit(&computed, lox + y * winw) == 0 && y < winh)
+        if(!getBit(&computed, lox + y * winw) && y < winh)
         {
           workq[workSize++] = lox + y * winw;
           setBit(&computed, lox + y * winw, 1);
@@ -650,7 +650,7 @@ void refinementStep()
     for(int x = 0; x < winw; x++)
     {
       int index = (winh - 1) * winw + x;
-      if(getBit(&computed, index) == 0)
+      if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
         setBit(&computed, index, 1);
@@ -659,7 +659,7 @@ void refinementStep()
     for(int y = 0; y < winh; y++)
     {
       int index = (y + 1) * winw - 1;
-      if(getBit(&computed, index) == 0)
+      if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
         setBit(&computed, index, 1);
@@ -716,9 +716,22 @@ void refinementStep()
           for(int y = loy; y < hiy; y++)
           {
             iters[x + y * winw] = val;
-            if(getBit(&computed, x + y * winw) == 0)
+            if(!getBit(&computed, x + y * winw))
               atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
             setBit(&computed, x + y * winw, 1);
+          }
+        }
+      }
+      else
+      {
+        //still fill non-computed pixels within block with the block's value
+        //they are not actually correct so don't mark them as computed
+        for(int x = lox; x < hix; x++)
+        {
+          for(int y = loy; y < hiy; y++)
+          {
+            if(!getBit(&computed, x + y * winw))
+              iters[x + y * winw] = val;
           }
         }
       }

@@ -175,6 +175,7 @@ void interactiveMain(int imageW, int imageH)
     }
     if(quit)
     {
+      runWorkers = false;
       terminating = true; //signal imageThread to stop working
       pthread_join(imageThread, NULL);
       break;
