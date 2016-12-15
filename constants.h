@@ -4,6 +4,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "string.h"
+#include "assert.h"
 #include "pthread.h"
 
 typedef unsigned char u8;
@@ -49,6 +50,7 @@ extern int maxiter;
 extern int prec;
 extern int numThreads;
 extern int pixelsComputed;
+extern float iterScale;
 
 extern float getPixelConvRate(int x, int y);
 

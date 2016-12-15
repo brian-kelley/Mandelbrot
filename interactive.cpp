@@ -14,12 +14,19 @@ static int th;
 static SDL_Window* win;
 static SDL_GLContext glcontext;
 static GLuint textureID;
-static float iterScale;
 static int colorFuncSel;
 //whether the image needs to be updated before next render
 static bool imageStale;
 static bool terminating;
 static bool frameBufStale;
+
+enum ColorFuncOptions
+{
+  HIST_SEL,
+  LOG_SEL,
+  EXPO_SEL,
+  NUM_COLOR_FUNC_OPTIONS
+};
 
 //clear image (both frameBuf and the GL texture) to black
 //called once in interactiveMain before main loop
@@ -58,15 +65,25 @@ static void* imageThreadRoutine(void* unused)
     if(imageStale)
     {
       clearBitset(&computed);
-      drawBuf(iterScale);
-      if(!runWorkers)
+      refinement = 0;
+      bool interrupted = false;
+      while(refinement != -1)
       {
-        //drawBuf interrupted, restart
+        refinementStep();
+        if(!runWorkers)
+        {
+          interrupted = true;
+          break;
+        }
+        frameBufStale = true;
+      }
+      if(interrupted)
+      {
+        //drawBuf interrupted, restart, possibly with new parameters
         runWorkers = true;
         continue;
       }
       imageStale = false;
-      frameBufStale = true;
     }
     else
     {
@@ -149,6 +166,7 @@ void interactiveMain(int imageW, int imageH)
     usleep(16667);
     SDL_Event event;
     bool quit = false;
+    bool interruptWorkers = false;
     while(SDL_PollEvent(&event))
     {
       ImGui_ImplSdl_ProcessEvent(&event);
@@ -216,6 +234,7 @@ void interactiveMain(int imageW, int imageH)
       upgradeIters();
       zoomDepth++;
       imageStale = true;
+      interruptWorkers = true;
     }
     else if(ImGui::IsItemClicked(1))
     {
@@ -237,20 +256,28 @@ void interactiveMain(int imageW, int imageH)
         downgradeIters();
         zoomDepth--;
         imageStale = true;
+        interruptWorkers = true;
       }
     }
     if(ImGui::Button("Reset View"))
     {
       resetView();
       imageStale = true;
+      interruptWorkers = true;
     }
     ImGui::Text("Zoom level: %i", zoomDepth);
     ImGui::Text("Pixel distance: %.3Le", getValue(&pstride));
     ImGui::Text("Precision: %s", getPrecString());
     if(ImGui::Checkbox("Smooth coloring", &smooth))
+    {
       imageStale = true;
+      interruptWorkers = true;
+    }
     if(ImGui::Checkbox("Supersampling", &supersample) && supersample)
+    {
       imageStale = true;
+      interruptWorkers = true;
+    }
     ImGui::NextColumn();
     float inputIters = maxiter;
     if(ImGui::SliderFloat("Max Iters", &inputIters, 100, 1000000, "%.0f", 4))
@@ -258,44 +285,41 @@ void interactiveMain(int imageW, int imageH)
       if(inputIters > maxiter)
         imageStale = true;
       maxiter = inputIters;
+      interruptWorkers = true;
     }
     //Color function selector
     {
       //possible (integer) values
-      const int HIST = 0;
-      const int LOG = 1;
-      const int EXPO = 2;
       const char* options[] = {"Histogram", "Logarithmic", "Exponential"};
-      if(ImGui::ListBox("Color Function", &colorFuncSel, options, 3))
+      if(ImGui::ListBox("Color Function", &colorFuncSel, options, NUM_COLOR_FUNC_OPTIONS))
       {
-        if(colorFuncSel == HIST)
+        if(colorFuncSel == HIST_SEL)
           colorMap = colorSunset;
-        else if(colorFuncSel == LOG)
+        else if(colorFuncSel == LOG_SEL)
           colorMap = colorBasicLog;
-        else if(colorFuncSel == EXPO)
+        else if(colorFuncSel == EXPO_SEL)
           colorMap = colorBasicExpo;
         //don't recompute iters, just update colors
-        recomputeFramebuffer();
+        frameBufStale = true;
       }
     }
     //Iter scaling
     float oldScale = iterScale;
     if(ImGui::SliderFloat("Color Scale", &iterScale, 0.001, 1000, "%.3f", 6))
     {
-      if(!imageStale)
-      {
-        for(int i = 0; i < winw * winh; i++)
-        {
-          if(iters[i] >= 0)
-            iters[i] *= (iterScale / oldScale);
-        }
-      }
+      //only need to update framebuffer if color map is affected by scaling
+      if(colorFuncSel != HIST_SEL)
+        frameBufStale = true;
     }
     //Target cache saving
     {
       ImGui::InputText("Target Cache", target, 64);
       if(ImGui::Button("Save Target"))
         saveTargetCache(target);
+    }
+    if(interruptWorkers && imageStale)
+    {
+      runWorkers = false;
     }
     //*** End GUI ***
     ImGui::End();

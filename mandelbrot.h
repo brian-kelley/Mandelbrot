@@ -45,7 +45,7 @@ extern int refinement;    //0 = full image, ceil(log(winw)) = single pixels
 extern bool runWorkers;   //used to interrupt worker threads in interactive mode
 
 //Compute framebuffer (and colors if applicable)
-MANDELBROT_API void drawBuf(float scale);
+MANDELBROT_API void drawBuf();
 
 // float
 void drawBufSIMD32();
@@ -96,8 +96,6 @@ MANDELBROT_API void colorSunset();
 MANDELBROT_API void colorGalaxy();
 MANDELBROT_API void colorBasicExpo();
 MANDELBROT_API void colorBasicLog();
-
-MANDELBROT_API void scaleIters(float scale);
 
 #endif
 

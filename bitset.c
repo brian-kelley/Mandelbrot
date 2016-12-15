@@ -17,12 +17,14 @@ void BitsetDtor(Bitset* b)
 
 int getBit(Bitset* b, int index)
 {
+  assert(index >= 0 && index < b->bits);
   u64 mask = 1ULL << (index % 64);
   return (b->buf[index / 64] & mask) ? 1 : 0;
 }
 
 void setBit(Bitset* b, int index, int value)
 {
+  assert(index >= 0 && index < b->bits);
   u64 mask = 1ULL << (index % 64);
   int word = index / 64;
   b->buf[word] &= ~mask;

@@ -30,6 +30,7 @@ ColorMap colorMap = colorSunset;
 int refinement;
 bool runWorkers;
 _Atomic int savings;
+float iterScale;
 
 void* monitorFunc(void* unused)
 {
@@ -85,6 +86,7 @@ const char* getPrecString()
 
 void writeImage()
 {
+  colorMap();
   char name[256];
   sprintf(name, "%s/mandel%i.png", outputDir, zoomDepth);
   for(int i = 0; i < winw * winh; i++)
@@ -188,23 +190,12 @@ u64 totalIters()
   return n;
 }
 
-void scaleIters(float scale)
-{
-  for(int i = 0; i < winw * winh; i++)
-  {
-    if(iters[i] > 0)
-      iters[i] *= scale;
-  }
-}
-
 float getPixelConvRate(int x, int y)
 {
   //printf("Getting conv rate @ %i, %i\n", x, y);
   long double tx = getValue(&targetX);
   long double ty = getValue(&targetY);
   long double ps = getValue(&pstride);
-  if(iters[x + y * winw] != NOT_COMPUTED)
-    return iters[x + y * winw];
   float rv = NOT_COMPUTED;
   if(ps > EPS_64)
   {
@@ -254,8 +245,6 @@ float getPixelConvRateSS(int x, int y)
   long double tx = getValue(&targetX);
   long double ty = getValue(&targetY);
   long double ps = getValue(&pstride);
-  if(iters[x + y * winw] != NOT_COMPUTED)
-    return iters[x + y * winw];
   float rv = NOT_COMPUTED;
   float output[4];
   if(ps > EPS_64)
@@ -392,7 +381,6 @@ void* fpWorker(void* unused)
     else
       getPixelConvRateSS(work % winw, work / winw);
     //mark pixel as computed
-    setBit(&computed, work, 1);
   }
   return NULL;
 }
@@ -446,7 +434,6 @@ void* simd32Worker(void* unused)
         if(work[i] >= 0 && work[i] + i < winw * winh)
         {
           iters[work[i]] = output[i];
-          setBit(&computed, work[i], 1);
         }
       }
     }
@@ -499,7 +486,6 @@ void* simd32Worker(void* unused)
         if(work[i] >= 0 && work[i] < winw * winh)
         {
           iters[work[i]] = ssValue(output + 4 * i);
-          setBit(&computed, work[i], 1);
         }
       }
     }
@@ -553,7 +539,6 @@ void* simd64Worker(void* unused)
         if(work[i] >= 0 && work[i] < winw * winh)
         {
           iters[work[i]] = output[i];
-          setBit(&computed, work[i], 1);
         }
       }
     }
@@ -577,7 +562,6 @@ void* simd64Worker(void* unused)
       else
         escapeTimeVec64Smooth(output, crDouble, ciDouble);
       iters[work] = ssValue(output);
-      setBit(&computed, work, 1);
     }
   }
   return NULL;
@@ -602,71 +586,86 @@ static void launchWorkers()
     pthread_join(threads[i], NULL);
 }
 
-void drawBuf(float scale)
+void drawBuf()
 {
   savings = 0;
   for(int i = 0; i < winw * winh; i++)
     iters[i] = -2;
   runWorkers = true;
-  /*
+  clearBitset(&computed);
   refinement = 0;
   while(refinement != -1)
     refinementStep();
-  */
-  workSize = 0;
-  launchWorkers();
-  pixelsComputed = winw * winh;
-  if(scale != 1)
-    scaleIters(scale);
-  if(frameBuf)
-    colorMap();
+  pixelsComputed = winw * winh - savings;
   putchar('\r');
-  printf("Saved %.2f%% of pixels.\n", (double) savings / (winw * winh));
 }
 
 void refinementStep()
 {
-  printf("\n *** Doing refinement step %i ***\n", refinement);
   workSize = 0;
   //iterate over blocks for the current refinement level
   //note: important not to include duplicate pixels in workq
   //positions = (winw / 2^refinement * i) = (winw * i) >> refinement
-  int prevI = -1;
-  int prevJ = -1;
+  int prevlox = -1;
+  int prevloy = -1;
   //iterate over blocks
-  for(int bi = 0; bi <= (1 << refinement); bi++)
+  for(int bi = 0; bi < (1 << refinement); bi++)
   {
     int lox = (winw * bi) >> refinement;
     int hix = (winw * (bi + 1)) >> refinement;
-    for(int bj = 0; bj <= (1 << refinement); bj++)
+    if(lox == prevlox)
+      continue;
+    for(int bj = 0; bj < (1 << refinement); bj++)
     {
       //printf("Computing boundary of block %i, %i\n", bi, bj);
       int loy = (winh * bj) >> refinement;
       int hiy = (winh * (bj + 1)) >> refinement;
-      //printf("block from pixel %i, %i to %i, %i\n", lox, loy, hix, hiy);
-      //block collided with previous block
-      /*
-      if(lox == prevI)
+      if(loy == prevloy)
         continue;
-      if(loy == prevJ)
-        continue;
-      */
-      prevI = lox;
-      prevJ = loy;
       //go along upper and left boundary of block, add each non-computed pixel to workq
       for(int x = lox; x < hix; x++)
       {
-        if(!getBit(&computed, x + loy * winw) && x < winw)
+        if(getBit(&computed, x + loy * winw) == 0 && x < winw)
+        {
           workq[workSize++] = x + loy * winw;
+          //mark pixel as computed because it will actually be computed before it is read again
+          setBit(&computed, x + loy * winw, 1);
+        }
       }
-      for(int y = loy + 1; y < hiy; y++)
+      for(int y = loy + 1; y < hiy - 1; y++)
       {
-        if(!getBit(&computed, lox + y * winw) && y < winh)
+        if(getBit(&computed, lox + y * winw) == 0 && y < winh)
+        {
           workq[workSize++] = lox + y * winw;
+          setBit(&computed, lox + y * winw, 1);
+        }
+      }
+      prevloy = loy;
+    }
+    prevlox = lox;
+  }
+  //add right and bottom edges of image (once per drawBuf only)
+  if(refinement == 0)
+  {
+    for(int x = 0; x < winw; x++)
+    {
+      int index = (winh - 1) * winw + x;
+      if(getBit(&computed, index) == 0)
+      {
+        workq[workSize++] = index;
+        setBit(&computed, index, 1);
+      }
+    }
+    for(int y = 0; y < winh; y++)
+    {
+      int index = (y + 1) * winw - 1;
+      if(getBit(&computed, index) == 0)
+      {
+        workq[workSize++] = index;
+        setBit(&computed, index, 1);
       }
     }
   }
-  printf("must compute %i pixels for level %i.\n", workSize, refinement);
   //do the work
   launchWorkers();
   //iterate over blocks again & check if boundary is all one value
@@ -677,26 +676,22 @@ void refinementStep()
     int hix = (winw * (bi + 1)) >> refinement;
     if(hix - lox <= 2)
       continue;
+    if(hix >= winw)
+      hix = winw - 1;
     for(int bj = 0; bj < (1 << refinement); bj++)
     {
       int loy = (winh * bj) >> refinement;
       int hiy = (winh * (bj + 1)) >> refinement;
       if(hiy - loy <= 2)
         continue;
+      if(hiy >= winh)
+        hiy = winh - 1;
       //go along boundary of block
       float val = iters[lox + loy * winw];
       bool allSame = true;
       for(int x = lox; x < hix; x++)
       {
-        if(iters[x + loy * winw] != val || iters[x + (hiy - 1) * winw] != val)
-        {
-          allSame = false;
-          break;
-        }
-      }
-      for(int y = loy + 1; y < hiy - 1; y++)
-      {
-        if(iters[lox + y * winw] != val || iters[hix - 1 + y * winw] != val)
+        if(iters[x + loy * winw] != val || iters[x + hiy * winw] != val)
         {
           allSame = false;
           break;
@@ -704,13 +699,25 @@ void refinementStep()
       }
       if(allSame)
       {
-        //fill block
-        for(int x = lox + 1; x < hix - 1; x++)
+        for(int y = loy + 1; y < hiy - 1; y++)
         {
-          for(int y = loy + 1; y < hiy - 1; y++)
+          if(iters[lox + y * winw] != val || iters[hix + y * winw] != val)
+          {
+            allSame = false;
+            break;
+          }
+        }
+      }
+      if(allSame)
+      {
+        //fill block
+        for(int x = lox; x < hix; x++)
+        {
+          for(int y = loy; y < hiy; y++)
           {
             iters[x + y * winw] = val;
-            atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
+            if(getBit(&computed, x + y * winw) == 0)
+              atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
             setBit(&computed, x + y * winw, 1);
           }
         }
@@ -768,7 +775,7 @@ void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)
     }
     for(int i = 0; i < gpx * gpx; i++)
       iters[i] = NOT_COMPUTED;
-    drawBuf(1);
+    drawBuf();
     if(verbose)
     {
       puts("**********The buffer:**********");

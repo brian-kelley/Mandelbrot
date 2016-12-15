@@ -17,3 +17,4 @@ MANDELBROT_API void setBit(Bitset* b, int index, int value);
 MANDELBROT_API void clearBitset(Bitset* b);
 
 #endif
+

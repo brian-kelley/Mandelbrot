@@ -115,7 +115,7 @@ static double expoMapFunc(double val)
 
 static double logMapFunc(double val)
 {
-  return log(val + 1) / log(1.05);
+  return log(val + 2) / log(1.05);
 }
 
 static void applyCyclicMapping(Image* im, Mapping func)
@@ -130,7 +130,7 @@ static void applyCyclicMapping(Image* im, Mapping func)
   for(int i = 0; i < winw * winh; i++)
   {
     if(iters[i] >= 0)
-      imgScratch[i] = func(iters[i]);
+      imgScratch[i] = func(iters[i] * iterScale);
     else
       imgScratch[i] = -1.0;
   }

@@ -22,6 +22,7 @@ int main(int argc, const char** argv)
   supersample = false;
   verbose = false;
   deepestExpo = -30;
+  iterScale = 1;
   int seed = 0;
   bool customPosition = false;
   long double inputX, inputY;
@@ -177,7 +178,7 @@ int main(int argc, const char** argv)
     time_t startTime = time(NULL);
     pthread_create(&monitor, NULL, monitorFunc, NULL);
     clearBitset(&computed);
-    drawBuf(1);
+    drawBuf();
     u64 nclocks = getTime() - startCycles;
     int sec = time(NULL) - startTime;
     pthread_join(monitor, NULL);
