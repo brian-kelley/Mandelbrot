@@ -9,6 +9,7 @@ unsigned* frameBuf;       //RGBA 8888 colors for whole image
 Bitset computed;          //Bit i is whether pixel i is known
 int* workq;               //simple "queue" of pixels to compute for a refinement step
 _Atomic int workCounter;  //index of next work unit
+_Atomic int pixelsDone;   //total number of pixels finalized, including savings
 int workSize;             //number of pixels in workq
 int lastOutline;
 FP targetX;
@@ -36,9 +37,9 @@ void* monitorFunc(void* unused)
 {
   double progress = 0;
   double width = MONITOR_WIDTH - 2;
-  while(progress < width)
+  while(progress < (width - 1e-6))
   {
-    progress = width * atomic_load_explicit(&workCounter, memory_order_relaxed) / (winw * winh);
+    progress = width * atomic_load_explicit(&pixelsDone, memory_order_relaxed) / (winw * winh);
     //move to start of line
     putchar('\r');
     putchar('[');
@@ -589,15 +590,31 @@ static void launchWorkers()
 void drawBuf()
 {
   savings = 0;
+  pixelsDone = 0;
   for(int i = 0; i < winw * winh; i++)
+  {
     iters[i] = -2;
+  }
   runWorkers = true;
-  clearBitset(&computed);
   refinement = 0;
   while(refinement != -1)
     refinementStep();
   pixelsComputed = winw * winh - savings;
   putchar('\r');
+}
+
+void drawBufQuick()
+{
+  savings = 0;
+  for(int i = 0; i < winw * winh; i++)
+  {
+    iters[i] = -2;
+  }
+  runWorkers = true;
+  refinement = 0;
+  while(refinement != -1)
+    refinementStepQuick();
+  pixelsComputed = winw * winh;
 }
 
 void refinementStep()
@@ -628,6 +645,7 @@ void refinementStep()
         if(!getBit(&computed, x + loy * winw) && x < winw)
         {
           workq[workSize++] = x + loy * winw;
+          atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
           //mark pixel as computed because it will actually be computed before it is read again
           setBit(&computed, x + loy * winw, 1);
         }
@@ -637,6 +655,7 @@ void refinementStep()
         if(!getBit(&computed, lox + y * winw) && y < winh)
         {
           workq[workSize++] = lox + y * winw;
+          atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
           setBit(&computed, lox + y * winw, 1);
         }
       }
@@ -653,6 +672,7 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
+        atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
         setBit(&computed, index, 1);
       }
     }
@@ -662,6 +682,7 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
+        atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
         setBit(&computed, index, 1);
       }
     }
@@ -717,7 +738,10 @@ void refinementStep()
           {
             iters[x + y * winw] = val;
             if(!getBit(&computed, x + y * winw))
+            {
               atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
+              atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
+            }
             setBit(&computed, x + y * winw, 1);
           }
         }
@@ -732,6 +756,61 @@ void refinementStep()
           {
             if(!getBit(&computed, x + y * winw))
               iters[x + y * winw] = val;
+          }
+        }
+      }
+    }
+  }
+  if((1 << refinement) >= winw && (1 << refinement) >= winh)
+  {
+    //done
+    refinement = -1;
+    return;
+  }
+  refinement++;
+}
+
+void refinementStepQuick()
+{
+  workSize = 0;
+  int prevx = -1;
+  int prevy = -1;
+  //iterate over blocks
+  for(int bi = 0; bi < (1 << refinement); bi++)
+  {
+    int x = (winw * bi) >> refinement;
+    if(x == prevx)
+      continue;
+    for(int bj = 0; bj < (1 << refinement); bj++)
+    {
+      int y = (winh * bj) >> refinement;
+      if(y == prevy)
+        continue;
+      //go along upper and left boundary of block, add each non-computed pixel to workq
+      if(!getBit(&computed, x + y * winw))
+        workq[workSize++] = x + y * winw;
+      prevy = y;
+    }
+    prevx = x;
+  }
+  launchWorkers();
+  //go back & fill blocks with color
+  for(int bi = 0; bi < (1 << refinement); bi++)
+  {
+    int lox = (winw * bi) >> refinement;
+    int hix = (winw * (bi + 1)) >> refinement;
+    for(int bj = 0; bj < (1 << refinement); bj++)
+    {
+      int loy = (winh * bj) >> refinement;
+      int hiy = (winh * (bj + 1)) >> refinement;
+      //go along upper and left boundary of block, add each non-computed pixel to workq
+      for(int x = lox; x < hix; x++)
+      {
+        for(int y = loy; y < hiy; y++)
+        {
+          if(!getBit(&computed, x + y * winw))
+          {
+            iters[x + y * winw] = iters[lox + loy * winw];
           }
         }
       }

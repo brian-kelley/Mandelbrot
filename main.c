@@ -158,7 +158,7 @@ int main(int argc, const char** argv)
   if(interactive)
     maxiter = 1000;
   else
-    maxiter = 80000;
+    maxiter = 10000;
   zoomDepth = 0;
   for(int i = 0; i < imgSkip; i++)
   {

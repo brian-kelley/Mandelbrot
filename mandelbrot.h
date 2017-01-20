@@ -45,7 +45,12 @@ extern int refinement;    //0 = full image, ceil(log(winw)) = single pixels
 extern bool runWorkers;   //used to interrupt worker threads in interactive mode
 
 //Compute framebuffer (and colors if applicable)
+//Uses Mariani-Silver algorithm to speed up overall image,
+//especially with lots of converging pixels
 MANDELBROT_API void drawBuf();
+//Refinement instead produces a coarse image as quickly as possible,
+//at the expense of overall image
+MANDELBROT_API void drawBufQuick();
 
 // float
 void drawBufSIMD32();
@@ -77,6 +82,7 @@ MANDELBROT_API void upgradeIters();    //update iteration cap between zooms
 MANDELBROT_API void downgradeIters();    //update iteration cap between zooms
 
 MANDELBROT_API void refinementStep();
+MANDELBROT_API void refinementStepQuick();
 
 MANDELBROT_API const char* getPrecString();
 

@@ -25,6 +25,9 @@ static int colorFuncSel;
 static bool imageStale;
 static bool terminating;
 static bool frameBufStale;
+static bool quickMode;
+//average size of coarse pixels on screen, in native pixels
+static int gridSize;
 //mutex on framebuffer - don't read while being written
 static pthread_mutex_t texLock;
 //extra buffer for iter values that are actually on screen
@@ -68,14 +71,15 @@ static void recomputeFramebuffer()
   }
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
-  pthread_mutex_unlock(&texLock);
   assert(!glGetError());
+  pthread_mutex_unlock(&texLock);
 }
 
 //internal interactive functions
 static void* imageThreadRoutine(void* unused)
 {
   imageStale = true;
+  double time = 0;
   while(!terminating)
   {
     if(imageStale)
@@ -84,11 +88,50 @@ static void* imageThreadRoutine(void* unused)
       refinement = 0;
       while(refinement != -1)
       {
-        refinementStep();
+        if(quickMode)
+        {
+          auto startTime = clock();
+          refinementStepQuick();
+          time = ((double) clock() - startTime) / CLOCKS_PER_SEC;
+        }
+        else
+          refinementStep();
         if(!runWorkers)
         {
           interrupted = true;
           break;
+        }
+        //If in quick mode, might update framebuffer after each refinement step
+        if(quickMode)
+        {
+          if(refinement >= 0 && time >= 0.2 && (max(winw, winh) >> refinement) < gridSize)
+          {
+            gridSize = max(winw, winh) >> refinement;
+            if(gridSize == 0)
+              gridSize = 1;
+            //copy new pixels from main iters to aux
+            pthread_mutex_lock(&texLock);
+            for(int bi = 0; bi < (1 << refinement); bi++)
+            {
+              int lox = (bi * winw) >> refinement;
+              int hix = ((bi + 1) * winw) >> refinement;
+              for(int bj = 0; bj < (1 << refinement); bj++)
+              {
+                int loy = (bj * winh) >> refinement;
+                int hiy = ((bj + 1) * winh) >> refinement;
+                float val = iters[lox + loy * winw];
+                for(int x = lox; x < hix; x++)
+                {
+                  for(int y = loy; y < hiy; y++)
+                  {
+                    auxIters[x + y * winw] = val;
+                  }
+                }
+              }
+            }
+            pthread_mutex_unlock(&texLock);
+            frameBufStale = true;
+          }
         }
       }
       if(interrupted)
@@ -98,8 +141,11 @@ static void* imageThreadRoutine(void* unused)
         runWorkers = true;
         continue;
       }
+      gridSize = 1;
       imageStale = false;
+      pthread_mutex_lock(&texLock);
       memcpy(auxIters, iters, winw * winh * sizeof(float));
+      pthread_mutex_unlock(&texLock);
       frameBufStale = true;
     }
     else
@@ -212,6 +258,7 @@ static void zoomIn(int mouseX, int mouseY)
       EXPAND_VAL;
     }
   }
+  gridSize *= 2;
   recomputeFramebuffer();
 }
 
@@ -233,6 +280,14 @@ static void zoomOut(int mouseX, int mouseY)
   //expand all pixels to twice their distance from mouse location
   //must do only one quadrant at a time
   //get frame of pixels in current FB that will fill entire frame after zoom
+  //don't do this if quick refinement is enabled (would create a quick, annoying grey flash)
+  if(quickMode)
+  {
+    //image is entirely invalid, so any new frame is an improvement
+    gridSize = 1000000;
+    return;
+  }
+  gridSize /= 2;
   mouseX += winw / 2;
   mouseY += winh / 2;
   int lox = mouseX / 2;
@@ -303,6 +358,9 @@ static void zoomOut(int mouseX, int mouseY)
 
 void interactiveMain(int imageW, int imageH)
 {
+  quickMode = true;
+  gridSize = 1;
+  clock_t frameStartTicks;
   pthread_mutex_init(&texLock, NULL);
   w = imageW;
   //GUI controls take up about 200 pixels of vertical space below image
@@ -365,9 +423,9 @@ void interactiveMain(int imageW, int imageH)
   pthread_t imageThread;
   pthread_create(&imageThread, NULL, imageThreadRoutine, NULL);
   frameBufStale = true;
+  frameStartTicks = clock();
   while(true)
   {
-    usleep(16667);
     SDL_Event event;
     bool quit = false;
     bool interruptWorkers = false;
@@ -459,6 +517,7 @@ void interactiveMain(int imageW, int imageH)
       imageStale = true;
       interruptWorkers = true;
     }
+    ImGui::Checkbox("Quick Refinement", &quickMode);
     ImGui::NextColumn();
     float inputIters = maxiter;
     if(ImGui::SliderFloat("Max Iters", &inputIters, 100, 1000000, "%.0f", 4))
@@ -508,6 +567,14 @@ void interactiveMain(int imageW, int imageH)
     glClear(GL_COLOR_BUFFER_BIT);
     ImGui::Render();
     SDL_GL_SwapWindow(win);
+    double frameTime = ((double) clock() - frameStartTicks) / CLOCKS_PER_SEC;
+    //try to hit 16.67 ms total frame time, including this delay
+    double delayUS = 1000000.0 * (1.0 / 60 - frameTime);
+    if(delayUS > 0 && delayUS < 1000000)
+    {
+      usleep((int) delayUS);
+    }
+    frameStartTicks = clock();
   }
   ImGui_ImplSdl_Shutdown();
   SDL_GL_DeleteContext(glcontext);
