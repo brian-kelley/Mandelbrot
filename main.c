@@ -1,21 +1,9 @@
 #include "mandelbrot.h"
 #include "interactive.h"
 #include "test.h"
-#include "gpu.h"
 
 int main(int argc, const char** argv)
 {
-  /*
-#ifdef GPU
-  puts("testing opencl");
-  if(!clTest())
-  {
-    puts("Error!");
-    return 1;
-  }
-  return 0;
-#endif
-*/
   if(argc == 2 && strcmp(argv[1], "--test") == 0)
   {
     testAll();

@@ -161,7 +161,7 @@ void colorHistWeighted(Image* im, double* weights)
   }
   //get # of diverged pixels
   int diverged = winw * winh;
-  while(imageIters[pixelList[diverged - 1]] == -1)
+  while(imageIters[pixelList[diverged - 1]] < 0)
     diverged--;
   int* colorOffsets = alloca(im->numColors * sizeof(int));
   double* normalWeights = alloca(im->numColors * sizeof(double));

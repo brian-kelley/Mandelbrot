@@ -21,7 +21,6 @@ include_directories(/usr/local/include)
 # Interactive requires: SDL2, OpenGL 2+
 find_library(SDL2_LIB SDL2)
 find_library(GL_LIB OpenGL)
-find_library(CL_LIB OpenCL)
 
 # Create Mandelbrot executable
 include_directories(imgui)
@@ -36,7 +35,6 @@ add_executable(Mandelbrot
   test.c
   lodepng.c
   interactive.cpp
-  #gpu.cpp
 )
 
 target_link_libraries(Mandelbrot ${PTHREAD_LIB})
@@ -47,13 +45,5 @@ if(SDL2_LIB AND GL_LIB)
   target_link_libraries(Mandelbrot ${SDL2_LIB} ${GL_LIB})
 else()
   message("Install OpenGL and SDL2 for GUI support")
-endif()
-
-if(CL_LIB)
-  message("OpenCL support enabled")
-  add_definitions(-DGPU)
-  target_link_libraries(Mandelbrot ${CL_LIB})
-else()
-  message("Install OpenCL for GPU support")
 endif()
 

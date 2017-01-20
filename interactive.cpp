@@ -30,7 +30,7 @@ static pthread_mutex_t texLock;
 //extra buffer for iter values that are actually on screen
 //needed to prevent artifacts when zooming quickly
 //must always match frameBuf
-static float* auxIters;
+static float* auxIters = NULL;
 
 enum ColorFuncOptions
 {
@@ -141,9 +141,6 @@ static void zoomIn(int mouseX, int mouseY)
   //expand all pixels to twice their distance from mouse location
   //must do only one quadrant at a time
   //get frame of pixels in current FB that will fill entire frame after zoom
-  //
-  //correct pixels that are translated to exact grid points in zoomed frame
-  //are also correct and can be marked as ccomputed immediately
   mouseX += winw / 2;
   mouseY += winh / 2;
   int lox = mouseX / 2;
@@ -232,6 +229,76 @@ static void zoomOut(int mouseX, int mouseY)
   downgradePrec(true);
   downgradeIters();
   zoomDepth--;
+  //copy pixels in opposite direction from zoomIn procedure
+  //expand all pixels to twice their distance from mouse location
+  //must do only one quadrant at a time
+  //get frame of pixels in current FB that will fill entire frame after zoom
+  mouseX += winw / 2;
+  mouseY += winh / 2;
+  int lox = mouseX / 2;
+  int hix = mouseX + (winw - mouseX) / 2;
+  int loy = mouseY / 2;
+  int hiy = mouseY + (winh - mouseY) / 2;
+//Macro to copy val to (mapx, mapy), set appropriate bit in computed, and do bounds checking
+#define CONDENSE_VAL { \
+  if(mapx < 0 || mapx >= winw || mapy < 0 || mapy >= winh) \
+    continue; \
+  int dstIndex = x + y * winw; \
+  int srcIndex = mapx + mapy * winw; \
+  bool pixelComputed = getBit(&computed, srcIndex); \
+  float val = iters[srcIndex]; \
+  float auxVal = auxIters[srcIndex]; \
+  if(pixelComputed) \
+    setBit(&computed, dstIndex, 1); \
+  iters[dstIndex] = val; \
+  auxIters[dstIndex] = auxVal; \
+}
+  for(int y = mouseY; y >= loy; y--)
+  {
+    int mapy = mouseY - (mouseY - y) * 2;
+    if(mapy < 0)
+      continue;
+    for(int x = mouseX; x >= lox; x--)
+    {
+      int mapx = mouseX - (mouseX - x) * 2;
+      CONDENSE_VAL;
+    }
+    for(int x = mouseX + 1; x < hix; x++)
+    {
+      int mapx = mouseX + (x - mouseX) * 2;
+      CONDENSE_VAL;
+    }
+  }
+  for(int y = mouseY + 1; y < hiy; y++)
+  {
+    int mapy = mouseY + (y - mouseY) * 2;
+    if(mapy >= winh)
+      continue;
+    for(int x = mouseX; x >= lox; x--)
+    {
+      int mapx = mouseX - (mouseX - x) * 2;
+      CONDENSE_VAL;
+    }
+    for(int x = mouseX + 1; x < hix; x++)
+    {
+      int mapx = mouseX + (x - mouseX) * 2;
+      CONDENSE_VAL;
+    }
+  }
+  for(int y = 0; y < winh; y++)
+  {
+    for(int x = 0; x < winw; x++)
+    {
+      if(x < lox || x >= hix || y < loy || y >= hiy)
+      {
+        int index = x + y * winw;
+        auxIters[index] = NOT_COMPUTED;
+        iters[index] = NOT_COMPUTED;
+        setBit(&computed, index, 0);
+      }
+    }
+  }
+  recomputeFramebuffer();
 }
 
 void interactiveMain(int imageW, int imageH)
