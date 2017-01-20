@@ -38,8 +38,7 @@ typedef struct \
 } FP##n;
 
 //declare complete specialization
-#define DECL_SPECIALIZATION(n) \
-IMPL_TYPE(n) \
+#define DECL_FUNCS(n) \
 static inline void print##n(FP##n val); \
 static inline FP##n load##n(FP* fp); \
 static inline void store##n(FP* fp, FP##n v); \
@@ -53,7 +52,12 @@ static inline FP##n add##n(FP##n a, FP##n b); \
 static inline FP##n sub##n(FP##n a, FP##n b); \
 static inline FP##n mul##n(FP##n a, FP##n b);
 
+#define DECL_SPECIALIZATION(n) \
+IMPL_TYPE(n) \
+DECL_FUNCS(n)
+
 //Declare all specialization types + inline functions
+
 DECL_SPECIALIZATION(3)
 DECL_SPECIALIZATION(4)
 DECL_SPECIALIZATION(5)
@@ -270,19 +274,19 @@ static inline FP2 sub2(FP2 a, FP2 b)
   return a - b;
 }
 
-inline void print2(FP2 val);
-inline FP2 load2(FP* fp);                    //translate FP to FP2
-inline void store2(FP* fp, FP2 v);           //translate FP2 to FP
-inline double getVal2(FP2 fp2);              //translate FP2 to double
-inline void setVal2(FP2* fp2, double val);   //translate double to FP2
-inline FP2 mul2(FP2 a, FP2 b);
+static inline void print2(FP2 val);
+static inline FP2 load2(FP* fp);                    //translate FP to FP2
+static inline void store2(FP* fp, FP2 v);           //translate FP2 to FP
+static inline double getVal2(FP2 fp2);              //translate FP2 to double
+static inline void setVal2(FP2* fp2, double val);   //translate double to FP2
+static inline FP2 mul2(FP2 a, FP2 b);
 
-inline void print2(FP2 val)
+static inline void print2(FP2 val)
 {
   printf("#%016llx%016llx", (u64) (val >> 64), (u64) val);
 }
 
-inline FP2 load2(FP* fp)
+static inline FP2 load2(FP* fp)
 {
   //load words
   s128 v = fp->value.val[0];
@@ -296,7 +300,7 @@ inline FP2 load2(FP* fp)
   return v;
 }
 
-inline void store2(FP* fp, FP2 v)
+static inline void store2(FP* fp, FP2 v)
 {
   s128 sv = v;
   if(sv >= 0)
@@ -313,7 +317,7 @@ inline void store2(FP* fp, FP2 v)
   fp->value.val[0] = (u64) sv;
 }
 
-inline double getVal2(FP2 fp2)
+static inline double getVal2(FP2 fp2)
 {
   bool sign = false;
   s128 sv = fp2;
@@ -327,14 +331,14 @@ inline double getVal2(FP2 fp2)
   return sign ? -val : val;
 }
 
-inline void setVal2(FP2* fp2, double val)
+static inline void setVal2(FP2* fp2, double val)
 {
   MAKE_STACK_FP_PREC(temp, 2);
   loadValue(&temp, val);
   *fp2 = load2(&temp);
 }
 
-inline FP2 mul2(FP2 a, FP2 b)
+static inline FP2 mul2(FP2 a, FP2 b)
 {
   u128 alo = (u64) a; 
   u128 ahi = a >> 64;
@@ -365,6 +369,8 @@ IMPL_NEG(n) \
 IMPL_ADD(n) \
 IMPL_SUB(n) \
 IMPL_MUL(n)
+
+//Only need to impl 
 
 IMPL_SPECIALIZATION(3)
 IMPL_SPECIALIZATION(4)

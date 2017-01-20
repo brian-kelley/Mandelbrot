@@ -1,4 +1,10 @@
 #ifdef INTERACTIVE
+
+//Compile imgui sources
+#include "imgui.cpp"
+#include "imgui_draw.cpp"
+#include "imgui_impl_sdl.cpp"
+
 #include "interactive.h"
 #include "SDL2/SDL.h"
 #include "OpenGL/gl.h"
@@ -19,6 +25,12 @@ static int colorFuncSel;
 static bool imageStale;
 static bool terminating;
 static bool frameBufStale;
+//mutex on framebuffer - don't read while being written
+static pthread_mutex_t texLock;
+//extra buffer for iter values that are actually on screen
+//needed to prevent artifacts when zooming quickly
+//must always match frameBuf
+static float* auxIters;
 
 enum ColorFuncOptions
 {
@@ -32,6 +44,7 @@ enum ColorFuncOptions
 //called once in interactiveMain before main loop
 static void textureClear()
 {
+  pthread_mutex_lock(&texLock);
   for(int i = 0; i < tw * th; i++)
   {
     frameBuf[i] = 0xFF000000;
@@ -40,11 +53,13 @@ static void textureClear()
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
   assert(!glGetError());
   imageStale = true;
+  pthread_mutex_unlock(&texLock);
 }
 
 //update frameBuf using iters
 static void recomputeFramebuffer()
 {
+  pthread_mutex_lock(&texLock);
   colorMap();
   for(int i = 0; i < tw * th; i++)
   {
@@ -53,6 +68,7 @@ static void recomputeFramebuffer()
   }
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
+  pthread_mutex_unlock(&texLock);
   assert(!glGetError());
 }
 
@@ -64,9 +80,8 @@ static void* imageThreadRoutine(void* unused)
   {
     if(imageStale)
     {
-      clearBitset(&computed);
-      refinement = 0;
       bool interrupted = false;
+      refinement = 0;
       while(refinement != -1)
       {
         refinementStep();
@@ -75,15 +90,17 @@ static void* imageThreadRoutine(void* unused)
           interrupted = true;
           break;
         }
-        frameBufStale = true;
       }
       if(interrupted)
       {
-        //drawBuf interrupted, restart, possibly with new parameters
+        //drawBuf interrupted, restart, possibly with completely new parameters/zoom/location
+        clearBitset(&computed);
         runWorkers = true;
         continue;
       }
       imageStale = false;
+      memcpy(auxIters, iters, winw * winh * sizeof(float));
+      frameBufStale = true;
     }
     else
     {
@@ -106,14 +123,133 @@ static void resetView()
   loadValue(&targetY, 0);
 }
 
+static void zoomIn(int mouseX, int mouseY)
+{
+  MAKE_STACK_FP(temp);
+  //update targetX
+  loadValue(&temp, (long double) mouseX / 2);
+  fpmul2(&temp, &pstride);
+  fpadd2(&targetX, &temp);
+  //update targetY
+  loadValue(&temp, (long double) mouseY / 2);
+  fpmul2(&temp, &pstride);
+  fpadd2(&targetY, &temp);
+  fpshrOne(pstride);
+  upgradePrec(true);
+  upgradeIters();
+  zoomDepth++;
+  //expand all pixels to twice their distance from mouse location
+  //must do only one quadrant at a time
+  //get frame of pixels in current FB that will fill entire frame after zoom
+  //
+  //correct pixels that are translated to exact grid points in zoomed frame
+  //are also correct and can be marked as ccomputed immediately
+  mouseX += winw / 2;
+  mouseY += winh / 2;
+  int lox = mouseX / 2;
+  int hix = mouseX + (winw - mouseX) / 2;
+  int loy = mouseY / 2;
+  int hiy = mouseY + (winh - mouseY) / 2;
+//Macro to copy val to (mapx, mapy), set appropriate bit in computed, and do bounds checking
+#define EXPAND_VAL { \
+  if(mapx < 0 || mapx >= winw || mapy < 0 || mapy >= winh) \
+    continue; \
+  int srcIndex = x + y * winw; \
+  bool pixelComputed = getBit(&computed, srcIndex); \
+  float val = iters[srcIndex]; \
+  float auxVal = auxIters[srcIndex]; \
+  if(pixelComputed) \
+    setBit(&computed, mapx + mapy * winw, 1); \
+  bool xbound = mapx + 1 < winw; \
+  bool ybound = mapy + 1 < winh; \
+  iters[mapx + mapy * winw] = val; \
+  auxIters[mapx + mapy * winw] = auxVal; \
+  if(xbound) \
+  { \
+    iters[(mapx + 1) + mapy * winw] = val; \
+    auxIters[(mapx + 1) + mapy * winw] = auxVal; \
+    setBit(&computed, (mapx + 1) + mapy * winw, 0); \
+  } \
+  if(ybound) \
+  { \
+    iters[mapx + (mapy + 1) * winw] = val; \
+    auxIters[mapx + (mapy + 1) * winw] = auxVal; \
+    setBit(&computed, mapx + (mapy + 1) * winw, 0); \
+  } \
+  if(xbound && ybound) \
+  { \
+    iters[(mapx + 1) + (mapy + 1) * winw] = val; \
+    auxIters[(mapx + 1) + (mapy + 1) * winw] = auxVal; \
+    setBit(&computed, (mapx + 1) + (mapy + 1) * winw, 0); \
+  } \
+}
+  for(int y = loy; y < mouseY; y++)
+  {
+    int mapy = mouseY - (mouseY - y) * 2;
+    if(mapy < 0)
+      continue;
+    for(int x = lox; x < mouseX; x++)
+    {
+      int mapx = mouseX - (mouseX - x) * 2;
+      EXPAND_VAL;
+    }
+    for(int x = hix; x >= mouseX; x--)
+    {
+      int mapx = mouseX + (x - mouseX) * 2;
+      EXPAND_VAL;
+    }
+  }
+  for(int y = hiy; y >= mouseY; y--)
+  {
+    int mapy = mouseY + (y - mouseY) * 2;
+    if(mapy >= winh)
+      continue;
+    for(int x = lox; x < mouseX; x++)
+    {
+      int mapx = mouseX - (mouseX - x) * 2;
+      EXPAND_VAL;
+    }
+    for(int x = hix; x >= mouseX; x--)
+    {
+      int mapx = mouseX + (x - mouseX) * 2;
+      EXPAND_VAL;
+    }
+  }
+  recomputeFramebuffer();
+}
+
+static void zoomOut(int mouseX, int mouseY)
+{
+  MAKE_STACK_FP(temp);
+  loadValue(&temp, mouseX);
+  fpmul2(&temp, &pstride);
+  fpsub2(&targetX, &temp);
+  //update targetX
+  loadValue(&temp, mouseY);
+  fpmul2(&temp, &pstride);
+  fpsub2(&targetY, &temp);
+  fpshlOne(pstride);
+  downgradePrec(true);
+  downgradeIters();
+  zoomDepth--;
+}
+
 void interactiveMain(int imageW, int imageH)
 {
+  pthread_mutex_init(&texLock, NULL);
   w = imageW;
+  //GUI controls take up about 200 pixels of vertical space below image
   h = imageH + 200;
   tw = imageW;
   th = imageH;
   iterScale = 1;
   colorFuncSel = 0;
+  auxIters = (float*) malloc(winw * winh * sizeof(float));
+  for(int i = 0; i < winw * winh; i++)
+  {
+    auxIters[i] = -1;
+  }
+  setImageIters(auxIters);
   char target[64];
   strcpy(target, "target.bin");
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
@@ -152,6 +288,7 @@ void interactiveMain(int imageW, int imageH)
   }
   //compute entire buffer immediately
   textureClear();
+  clearBitset(&computed);
   //create asynchronous image generating threadw
   //always running along main thread
   //runs drawBuf when imageUpdate is true, otherwise sleeps for 16.7 ms
@@ -221,19 +358,7 @@ void interactiveMain(int imageW, int imageH)
     {
       //left button, zoom in
       // formula: target += 0.5 * pstride * mousePos
-      MAKE_STACK_FP(temp);
-      //update targetX
-      loadValue(&temp, (long double) cursor.x / 2);
-      fpmul2(&temp, &pstride);
-      fpadd2(&targetX, &temp);
-      //update targetY
-      loadValue(&temp, (long double) cursor.y / 2);
-      fpmul2(&temp, &pstride);
-      fpadd2(&targetY, &temp);
-      fpshrOne(pstride);
-      upgradePrec(true);
-      upgradeIters();
-      zoomDepth++;
+      zoomIn(cursor.x, cursor.y);
       imageStale = true;
       interruptWorkers = true;
     }
@@ -243,19 +368,7 @@ void interactiveMain(int imageW, int imageH)
       if(zoomDepth > 0)
       {
         //formula: target -= 2 * pstride * mousePos
-        //update targetX
-        MAKE_STACK_FP(temp);
-        loadValue(&temp, cursor.x);
-        fpmul2(&temp, &pstride);
-        fpsub2(&targetX, &temp);
-        //update targetX
-        loadValue(&temp, cursor.y);
-        fpmul2(&temp, &pstride);
-        fpsub2(&targetY, &temp);
-        fpshlOne(pstride);
-        downgradePrec(true);
-        downgradeIters();
-        zoomDepth--;
+        zoomOut(cursor.x, cursor.y);
         imageStale = true;
         interruptWorkers = true;
       }
@@ -305,7 +418,6 @@ void interactiveMain(int imageW, int imageH)
       }
     }
     //Iter scaling
-    float oldScale = iterScale;
     if(ImGui::SliderFloat("Color Scale", &iterScale, 0.001, 1000, "%.3f", 6))
     {
       //only need to update framebuffer if color map is affected by scaling
@@ -334,6 +446,8 @@ void interactiveMain(int imageW, int imageH)
   SDL_GL_DeleteContext(glcontext);
   SDL_DestroyWindow(win);
   SDL_Quit();
+  free(auxIters);
+  pthread_mutex_destroy(&texLock);
   exit(0);
 }
 

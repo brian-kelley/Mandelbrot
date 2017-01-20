@@ -5,6 +5,7 @@
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
 static float _expo;
+static float* imageIters;
 float* imgScratch;
 
 Uint32 lerp(Uint32 c1, Uint32 c2, double k)
@@ -15,45 +16,16 @@ Uint32 lerp(Uint32 c1, Uint32 c2, double k)
   return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
 }
 
-void reduceIters(int* iterbuf, int diffCap, int w, int h)
+void setImageIters(float* ii)
 {
-  bool changed;
-  do
-  {
-    changed = false;
-    for(int i = 1; i < w - 1; i++)
-    {
-      for(int j = 1; j < h - 1; j++)
-      {
-        int thisIter = iterbuf[i + j * w];
-        if(thisIter == -1)
-          continue;
-        int minNeighbor = thisIter;
-        for(int ii = -1; ii <= 1; ii++)
-        {
-          for(int jj = -1; jj <= 1; jj++)
-          {
-            int neighbor = iterbuf[(i + ii) + (j + jj) * w];
-            if(neighbor != -1 && neighbor < thisIter)
-              minNeighbor = neighbor;
-          }
-        }
-        if(thisIter - minNeighbor > diffCap)
-        {
-          iterbuf[i + j * w] = minNeighbor + diffCap;
-          //changed = true;
-        }
-      }
-    }
-  }
-  while(changed);
+  imageIters = ii;
 }
 
 //comparator returns -1 if lhs < rhs, 1 if lhs > rhs
 static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 {
-  float lhs = iters[*((int*) lhsRaw)];
-  float rhs = iters[*((int*) rhsRaw)];
+  float lhs = imageIters[*((int*) lhsRaw)];
+  float rhs = imageIters[*((int*) rhsRaw)];
   if(lhs == rhs)
     return 0;
   if(lhs < 0)
@@ -71,9 +43,9 @@ void handleNonColored()
 {
   for(int i = 0; i < winw * winh; i++)
   {
-    if(iters[i] == -1)
+    if(imageIters[i] == -1)
       frameBuf[i] = 0xFF;
-    else if(iters[i] < 0)
+    else if(imageIters[i] < 0)
       frameBuf[i] = 0x999999FF;
   }
 }
@@ -124,13 +96,13 @@ static void applyCyclicMapping(Image* im, Mapping func)
   int minVal = INT_MAX;
   for(int i = 0; i < winw * winh; i++)
   {
-    if(iters[i] > 0 && iters[i] < minVal)
-      minVal = iters[i];
+    if(imageIters[i] > 0 && imageIters[i] < minVal)
+      minVal = imageIters[i];
   }
   for(int i = 0; i < winw * winh; i++)
   {
-    if(iters[i] >= 0)
-      imgScratch[i] = func(iters[i] * iterScale);
+    if(imageIters[i] >= 0)
+      imgScratch[i] = func(imageIters[i] * iterScale);
     else
       imgScratch[i] = -1.0;
   }
@@ -178,9 +150,9 @@ void colorHistWeighted(Image* im, double* weights)
   int* pixelList = (int*) imgScratch;
   for(int i = 0; i < winw * winh; i++)
     pixelList[i] = i;
-  //sort pixelList (iters indices) according to the iter values
+  //sort pixelList (imageIters indices) according to the iter values
   qsort(pixelList, winw * winh, sizeof(int), pixelCompare);
-  if(iters[pixelList[0]] == -1)
+  if(imageIters[pixelList[0]] == -1)
   {
     //something wrong with computation, but fill screen with black and return
     for(int i = 0; i < winw * winh; i++)
@@ -189,7 +161,7 @@ void colorHistWeighted(Image* im, double* weights)
   }
   //get # of diverged pixels
   int diverged = winw * winh;
-  while(iters[pixelList[diverged - 1]] == -1)
+  while(imageIters[pixelList[diverged - 1]] == -1)
     diverged--;
   int* colorOffsets = alloca(im->numColors * sizeof(int));
   double* normalWeights = alloca(im->numColors * sizeof(double));
@@ -211,7 +183,7 @@ void colorHistWeighted(Image* im, double* weights)
   int firstOfValue = 0; //index of first first pixel encountered with ith value
   for(int i = 0; i < diverged; i++)
   {
-    if(iters[pixelList[i]] != iters[pixelList[firstOfValue]])
+    if(imageIters[pixelList[i]] != imageIters[pixelList[firstOfValue]])
       firstOfValue = i;
     while(colorOffsets[lowerColor + 1] <= firstOfValue)
       lowerColor++;

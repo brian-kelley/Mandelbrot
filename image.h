@@ -22,6 +22,9 @@ extern float* imgScratch;
 //is used by histogram colorings where range is not specified by caller
 #define DEFAULT_CYCLE_LEN 1000
 
+//set the iters buf to be used (different for interactive and cli)
+MANDELBROT_API void setImageIters(float* ii);
+
 typedef double (*Mapping) (double orig);
 
 typedef struct
@@ -31,9 +34,6 @@ typedef struct
   double cycles;     //number of repeats of the colormap in one image
   int period;
 } Image;
-
-//constant = how much color is borrowed from each neighbor (i.e. 0.1 means multiply neighbors by 0.1, and old color by 0.6)
-void reduceIters(int* iterbuf, int diffCap, int w, int h);
 
 //Linear interpolation (lerp) for colors
 //k is a float/double between 0 and 1
