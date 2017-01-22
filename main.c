@@ -183,18 +183,27 @@ int main(int argc, const char** argv)
     pthread_create(&monitor, NULL, monitorFunc, NULL);
     clearBitset(&computed);
     drawBuf();
-    u64 nclocks = getTime() - startCycles;
+    u64 endCycles = getTime();
+    u64 drawBufCycles = endCycles - startCycles;
     int sec = time(NULL) - startTime;
     pthread_join(monitor, NULL);
     //clear monitor bar and carriage return
+    double cyclesPerIter = (double) drawBufCycles / totalIters();
+    cyclesPerIter *= numThreads;
+    cyclesPerIter *= (double) (winw * winh - savings) / (winw * winh);
+    if(supersample)
+      cyclesPerIter /= 4;
+    writeImage();
+    fpshr(pstride, zoomRate);
+    upgradeIters();
+    upgradePrec(false);
+    zoomDepth += zoomRate;
+    //terminal output
     putchar('\r');
     for(int i = 0; i < MONITOR_WIDTH; i++)
       putchar(' ');
     putchar('\r');
-    double cyclesPerIter = (double) (numThreads * nclocks) / totalIters();
-    if(supersample)
-      cyclesPerIter /= 4;
-    printf("Image #%i took %i second", zoomDepth, sec);
+    printf("Image #%i took %i second", zoomDepth - 1, sec);
     if(sec != 1)
       putchar('s');
     if(verbose)
@@ -203,11 +212,6 @@ int main(int argc, const char** argv)
           cyclesPerIter, maxiter, getPrecString());
     }
     putchar('\n');
-    writeImage();
-    fpshr(pstride, zoomRate);
-    upgradeIters();
-    upgradePrec(false);
-    zoomDepth += zoomRate;
   }
   free(imgScratch);
   free(frameBuf);

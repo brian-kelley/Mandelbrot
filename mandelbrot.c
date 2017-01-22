@@ -597,8 +597,10 @@ void drawBuf()
   }
   runWorkers = true;
   refinement = 0;
-  while(refinement != -1)
+  while(atomic_load(&pixelsDone) < winw * winh)
+  {
     refinementStep();
+  }
   pixelsComputed = winw * winh - savings;
   putchar('\r');
 }
@@ -645,7 +647,6 @@ void refinementStep()
         if(!getBit(&computed, x + loy * winw) && x < winw)
         {
           workq[workSize++] = x + loy * winw;
-          atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
           //mark pixel as computed because it will actually be computed before it is read again
           setBit(&computed, x + loy * winw, 1);
         }
@@ -655,7 +656,6 @@ void refinementStep()
         if(!getBit(&computed, lox + y * winw) && y < winh)
         {
           workq[workSize++] = lox + y * winw;
-          atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
           setBit(&computed, lox + y * winw, 1);
         }
       }
@@ -672,7 +672,6 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
-        atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
         setBit(&computed, index, 1);
       }
     }
@@ -682,12 +681,12 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
-        atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
         setBit(&computed, index, 1);
       }
     }
   }
   //do the work
+  atomic_fetch_add_explicit(&pixelsDone, workSize, memory_order_relaxed);
   launchWorkers();
   //iterate over blocks again & check if boundary is all one value
   //if so, flood fill block with the value & mark interior as computed
@@ -741,8 +740,8 @@ void refinementStep()
             {
               atomic_fetch_add_explicit(&savings, 1, memory_order_relaxed);
               atomic_fetch_add_explicit(&pixelsDone, 1, memory_order_relaxed);
+              setBit(&computed, x + y * winw, 1);
             }
-            setBit(&computed, x + y * winw, 1);
           }
         }
       }

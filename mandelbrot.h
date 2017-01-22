@@ -43,6 +43,7 @@ extern ColorMap colorMap;
 extern Bitset computed;
 extern int refinement;    //0 = full image, ceil(log(winw)) = single pixels
 extern bool runWorkers;   //used to interrupt worker threads in interactive mode
+extern _Atomic int savings;
 
 //Compute framebuffer (and colors if applicable)
 //Uses Mariani-Silver algorithm to speed up overall image,
