@@ -58,6 +58,7 @@ static void recomputeFramebuffer()
 {
   pthread_mutex_lock(&itersLock);
   colorMap();
+  //after colorMap() iters is not read so unlock it
   pthread_mutex_unlock(&itersLock);
   for(int i = 0; i < tw * th; i++)
   {
@@ -99,7 +100,7 @@ static void* imageThreadRoutine(void* unused)
         {
           refinementStep();
         }
-        if(gridSize <= 4)
+        //if(gridSize <= 4)
         {
           refreshTexture = true;
         }
@@ -314,8 +315,8 @@ static void zoomOut(int mouseX, int mouseY)
       }
     }
   }
-  pthread_mutex_unlock(&itersLock);
   recomputeFramebuffer();
+  pthread_mutex_unlock(&itersLock);
 }
 
 //Mark all converged pixels as requiring recomputation
@@ -398,6 +399,10 @@ void interactiveMain(int imageW, int imageH)
   //if main thread gets update event during image computation, drawBuf is
   //interrupted so that imageThread waits until ready to work again
   terminating = false;
+  //initialize itersLock as a recursive (allow locking multiple times on same thread) mutex
+  pthread_mutexattr_t mutexAttr;
+  pthread_mutexattr_init(&mutexAttr);
+  pthread_mutexattr_settype(&mutexAttr, PTHREAD_MUTEX_RECURSIVE);
   pthread_mutex_init(&itersLock, NULL);
   pthread_t imageThread;
   pthread_create(&imageThread, NULL, imageThreadRoutine, NULL);
