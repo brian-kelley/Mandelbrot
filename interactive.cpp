@@ -56,7 +56,9 @@ enum ColorFuncOptions
 //update frameBuf using iters
 static void recomputeFramebuffer()
 {
+  pthread_mutex_lock(&itersLock);
   colorMap();
+  pthread_mutex_unlock(&itersLock);
   for(int i = 0; i < tw * th; i++)
   {
     Uint32 temp = frameBuf[i]; 
@@ -70,57 +72,42 @@ static void recomputeFramebuffer()
 //internal interactive functions
 static void* imageThreadRoutine(void* unused)
 {
-  bool updateFB = false;
-  double time = 0;
   while(!terminating)
   {
     if(runWorkers)
     {
       refinement = 0;
-      /*
-      if(getValue(&pstride) > EPS_64)
+      while(refinement != -1)
       {
-        //image generation should be extremely fast, << 1s, so avoid overhead
-        pthread_mute
-        drawBuf();
-        updateFB = true;
-      }
-      else
-      */
-      {
-        while(refinement != -1)
+        pthread_mutex_lock(&itersLock);
+        if(quickMode)
         {
-          pthread_mutex_lock(&itersLock);
-          if(quickMode)
+          auto startTime = clock();
+          /*
+          if(gridSize < 8 && !ranDeepRefinement)
           {
-            auto startTime = clock();
-            /*
-            if(gridSize < 8 && !ranDeepRefinement)
-            {
-              refineDeepPixels();
-              ranDeepRefinement = true;
-            }
-            else
-            */
-            {
-              refinementStepQuick();
-            }
-            time = ((double) clock() - startTime) / CLOCKS_PER_SEC;
+            refineDeepPixels();
+            ranDeepRefinement = true;
           }
           else
+          */
           {
-            refinementStep();
+            refinementStepQuick();
           }
-          if(time >= 0.1)
-            updateFB = true;
-          pthread_mutex_unlock(&itersLock);
         }
-        runWorkers = false;
+        else
+        {
+          refinementStep();
+        }
+        if(gridSize <= 4)
+        {
+          refreshTexture = true;
+        }
+        pthread_mutex_unlock(&itersLock);
       }
-      if(updateFB && time < 0.2)
+      if(bitsetPopcnt(&computed) == winw * winh)
       {
-        //framebuf/texture can only be updated by main thread
-        refreshTexture = true;
+        runWorkers = false;
       }
     }
     else
@@ -166,6 +153,7 @@ static void zoomIn(int mouseX, int mouseY)
   //expand all pixels to twice their distance from mouse location
   //must do only one quadrant at a time
   //get frame of pixels in current FB that will fill entire frame after zoom
+  return;
   mouseX += winw / 2;
   mouseY += winh / 2;
   int lox = mouseX / 2;
@@ -177,10 +165,9 @@ static void zoomIn(int mouseX, int mouseY)
   if(mapx < 0 || mapx >= winw || mapy < 0 || mapy >= winh) \
     continue; \
   int srcIndex = x + y * winw; \
-  bool pixelComputed = getBit(&computed, srcIndex); \
+  int pixelComputed = getBit(&computed, srcIndex); \
   float val = iters[srcIndex]; \
-  if(pixelComputed) \
-    setBit(&computed, mapx + mapy * winw, 1); \
+  setBit(&computed, mapx + mapy * winw, pixelComputed); \
   bool xbound = mapx + 1 < winw; \
   bool ybound = mapy + 1 < winh; \
   iters[mapx + mapy * winw] = val; \
@@ -327,8 +314,8 @@ static void zoomOut(int mouseX, int mouseY)
       }
     }
   }
-  recomputeFramebuffer();
   pthread_mutex_unlock(&itersLock);
+  recomputeFramebuffer();
 }
 
 //Mark all converged pixels as requiring recomputation
@@ -540,7 +527,6 @@ void interactiveMain(int imageW, int imageH)
           colorMap = colorBasicLog;
         else if(colorFuncSel == EXPO_SEL)
           colorMap = colorBasicExpo;
-        //?????necessary?????? pthread_mutex_lock(&itersLock);
         recomputeFramebuffer();
       }
     }
@@ -549,7 +535,9 @@ void interactiveMain(int imageW, int imageH)
     {
       //only need to update framebuffer if color map is affected by scaling
       if(colorFuncSel != HIST_SEL)
+      {
         recomputeFramebuffer();
+      }
     }
     //Target cache saving
     {
