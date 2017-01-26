@@ -32,6 +32,7 @@ int refinement;
 bool runWorkers;
 _Atomic int savings;
 float iterScale;
+int gridSize;
 
 void* monitorFunc(void* unused)
 {
@@ -237,6 +238,7 @@ float getPixelConvRate(int x, int y)
     pixelsComputed++;
   }
   iters[x + y * winw] = rv;
+  setBit(&computed, x + y * winw, 1);
   return rv;
 }
 
@@ -339,6 +341,7 @@ float getPixelConvRateSS(int x, int y)
   }
   rv = ssValue(output);
   iters[x + y * winw] = rv;
+  setBit(&computed, x + y * winw, 1);
   return rv;
 }
 
@@ -354,11 +357,13 @@ static bool fetchWorkPixel(int* px)
   {
     //work is already the pixel index
     *px = work;
+    setBit(&computed, *px, 1);
   }
   else
   {
     //work is an index in workq, get the pixel index
     *px = workq[work];
+    setBit(&computed, *px, 1);
   }
   return true;
 }
@@ -589,6 +594,7 @@ static void launchWorkers()
 
 void drawBuf()
 {
+  puts("S:LDFJL:KSDJF:LKSDJF:LKSDJF:LKSDJFL:KDJSF:");
   savings = 0;
   pixelsDone = 0;
   for(int i = 0; i < winw * winh; i++)
@@ -597,16 +603,21 @@ void drawBuf()
   }
   runWorkers = true;
   refinement = 0;
-  while(atomic_load(&pixelsDone) < winw * winh)
+  while(runWorkers && atomic_load(&pixelsDone) < winw * winh)
   {
     refinementStep();
   }
+  if(atomic_load(&pixelsDone) == winw * winh)
+  {
+    gridSize = 1;
+    refinement = -1;
+  }
   pixelsComputed = winw * winh - savings;
-  putchar('\r');
 }
 
 void drawBufQuick()
 {
+  puts("S:LDFJL:KSDJF:LKSDJF:LKSDJF:LKSDJFL:KDJSF:");
   savings = 0;
   for(int i = 0; i < winw * winh; i++)
   {
@@ -614,8 +625,13 @@ void drawBufQuick()
   }
   runWorkers = true;
   refinement = 0;
-  while(refinement != -1)
+  while(atomic_load(&pixelsDone) < winw * winh)
     refinementStepQuick();
+  if(atomic_load(&pixelsDone) == winw * winh)
+  {
+    gridSize = 1;
+    refinement = -1;
+  }
   pixelsComputed = winw * winh;
 }
 
@@ -636,7 +652,6 @@ void refinementStep()
       continue;
     for(int bj = 0; bj < (1 << refinement); bj++)
     {
-      //printf("Computing boundary of block %i, %i\n", bi, bj);
       int loy = (winh * bj) >> refinement;
       int hiy = (winh * (bj + 1)) >> refinement;
       if(loy == prevloy)
@@ -656,7 +671,6 @@ void refinementStep()
         if(!getBit(&computed, lox + y * winw) && y < winh)
         {
           workq[workSize++] = lox + y * winw;
-          setBit(&computed, lox + y * winw, 1);
         }
       }
       prevloy = loy;
@@ -672,7 +686,6 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
-        setBit(&computed, index, 1);
       }
     }
     for(int y = 0; y < winh; y++)
@@ -681,7 +694,6 @@ void refinementStep()
       if(!getBit(&computed, index))
       {
         workq[workSize++] = index;
-        setBit(&computed, index, 1);
       }
     }
   }
@@ -764,9 +776,11 @@ void refinementStep()
   {
     //done
     refinement = -1;
+    gridSize = 1;
     return;
   }
   refinement++;
+  gridSize = winw >> refinement;
 }
 
 void refinementStepQuick()
@@ -794,22 +808,25 @@ void refinementStepQuick()
   }
   launchWorkers();
   //go back & fill blocks with color
-  for(int bi = 0; bi < (1 << refinement); bi++)
+  if((winw >> refinement) > 2)
   {
-    int lox = (winw * bi) >> refinement;
-    int hix = (winw * (bi + 1)) >> refinement;
-    for(int bj = 0; bj < (1 << refinement); bj++)
+    for(int bi = 0; bi < (1 << refinement); bi++)
     {
-      int loy = (winh * bj) >> refinement;
-      int hiy = (winh * (bj + 1)) >> refinement;
-      //go along upper and left boundary of block, add each non-computed pixel to workq
-      for(int x = lox; x < hix; x++)
+      int lox = (winw * bi) >> refinement;
+      int hix = (winw * (bi + 1)) >> refinement;
+      for(int bj = 0; bj < (1 << refinement); bj++)
       {
-        for(int y = loy; y < hiy; y++)
+        int loy = (winh * bj) >> refinement;
+        int hiy = (winh * (bj + 1)) >> refinement;
+        //go along upper and left boundary of block, add each non-computed pixel to workq
+        for(int x = lox; x < hix; x++)
         {
-          if(!getBit(&computed, x + y * winw))
+          for(int y = loy; y < hiy; y++)
           {
-            iters[x + y * winw] = iters[lox + loy * winw];
+            if(!getBit(&computed, x + y * winw) && gridSize >= (winw >> refinement))
+            {
+              iters[x + y * winw] = iters[lox + loy * winw];
+            }
           }
         }
       }
@@ -819,9 +836,62 @@ void refinementStepQuick()
   {
     //done
     refinement = -1;
+    gridSize = 1;
     return;
   }
   refinement++;
+  gridSize = winw >> refinement;
+}
+
+int _sampleCompare(const void* p1, const void* p2)
+{
+  const float f1 = *((const float*) p1);
+  const float f2 = *((const float*) p2);
+  if(f1 == f2)
+    return 0;
+  if(f1 == -1.0f)
+    return 1;
+  if(f2 == -1.0f)
+    return -1;
+  if(f1 < f2)
+    return -1;
+  else
+    return 1;
+}
+
+void refineDeepPixels()
+{
+  //proportion of pixels to fully refine
+  //final result not exactly this but will be close and doesn't need to be
+  const double proportion = 0.08;
+  //number of random samples to take (for getting approx. iter count of pixel at the cutoff)
+  const int n = 4096; //not too big, must fit on stack
+  float samples[n];
+  for(int i = 0; i < n; i++)
+  {
+    samples[i] = iters[rand() % (winw * winh)];
+  }
+  //see image.c: weightedHist() for similar pixel statistics
+  qsort(samples, n, sizeof(float), _sampleCompare);
+  int nonConverged = n;
+  while(samples[nonConverged - 1] < 0.0f && nonConverged > 0)
+    nonConverged--;
+  if(nonConverged == 0)
+    return; //nothing left to do, image either done or needs more refinement steps
+  float cutoff = samples[(int) ((1.0 - proportion) * nonConverged)];
+  printf("Fully refining all pixels with iters >= %f (median is %f)\n", cutoff, samples[nonConverged / 2]);
+  //now fully iterate all refinement blocks with value >= cutoff
+  workSize = 0;
+  for(int i = 0; i < winw * winh; i++)
+  {
+    if(!getBit(&computed, i) && iters[i] >= cutoff)
+    {
+      setBit(&computed, i, 1);
+      workq[workSize++] = i;
+    }
+  }
+  printf("Computing %i pixels.\n", workSize);
+  launchWorkers();
 }
 
 void getInterestingLocation(int minExpo, const char* cacheFile, bool useCache)

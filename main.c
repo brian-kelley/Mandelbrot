@@ -171,10 +171,6 @@ int main(int argc, const char** argv)
   {
     interactiveMain(winw, winh);
   }
-  else
-  {
-    setImageIters(iters);
-  }
   //resume file: zoomDepth, last maxiter, prec
   while(getApproxExpo(&pstride) >= deepestExpo)
   {

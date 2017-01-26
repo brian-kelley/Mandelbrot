@@ -22,18 +22,10 @@ static SDL_GLContext glcontext;
 static GLuint textureID;
 static int colorFuncSel;
 //whether the image needs to be updated before next render
-static bool imageStale;
 static bool terminating;
-static bool frameBufStale;
 static bool quickMode;
-//average size of coarse pixels on screen, in native pixels
-static int gridSize;
-//mutex on framebuffer - don't read while being written
-static pthread_mutex_t texLock;
-//extra buffer for iter values that are actually on screen
-//needed to prevent artifacts when zooming quickly
-//must always match frameBuf
-static float* auxIters = NULL;
+static bool refreshTexture;
+static pthread_mutex_t itersLock;
 
 enum ColorFuncOptions
 {
@@ -43,26 +35,27 @@ enum ColorFuncOptions
   NUM_COLOR_FUNC_OPTIONS
 };
 
-//clear image (both frameBuf and the GL texture) to black
-//called once in interactiveMain before main loop
-static void textureClear()
-{
-  pthread_mutex_lock(&texLock);
-  for(int i = 0; i < tw * th; i++)
-  {
-    frameBuf[i] = 0xFF000000;
-  }
-  glBindTexture(GL_TEXTURE_2D, textureID);
-  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
-  assert(!glGetError());
-  imageStale = true;
-  pthread_mutex_unlock(&texLock);
-}
+/* Run main thread and image drawing thread concurrently
+ * In general, the image thread works on filling iters until done, then sleeps until image update is needed
+ *
+ * Image thread can be interrupted in 2 ways:
+ *  -total (resetView(), supersample turned on, zoomOut() with quick mode on)
+ *    * Stop workers
+ *    * Pause image creation thread
+ *    * Clear "computed" bitset completely
+ *    * Fill iters with NOT_COMPUTED
+ *    * Leave framebuffer and GL texture stale (they must be updated ASAP)
+ *  -partial (zoomIn(), iter count change, zoomOut() with quick mode off)  
+ *    * Stop workers
+ *    * Pause image thread
+ *    * Rearrange iters, set "computed" bits accordingly
+ *    * Immediately update framebuf and texture
+ *    * Restart image thread
+ */
 
 //update frameBuf using iters
 static void recomputeFramebuffer()
 {
-  pthread_mutex_lock(&texLock);
   colorMap();
   for(int i = 0; i < tw * th; i++)
   {
@@ -72,85 +65,68 @@ static void recomputeFramebuffer()
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
   assert(!glGetError());
-  pthread_mutex_unlock(&texLock);
 }
 
 //internal interactive functions
 static void* imageThreadRoutine(void* unused)
 {
-  imageStale = true;
+  bool updateFB = false;
   double time = 0;
   while(!terminating)
   {
-    if(imageStale)
+    if(runWorkers)
     {
-      bool interrupted = false;
       refinement = 0;
-      while(refinement != -1)
+      /*
+      if(getValue(&pstride) > EPS_64)
       {
-        if(quickMode)
+        //image generation should be extremely fast, << 1s, so avoid overhead
+        pthread_mute
+        drawBuf();
+        updateFB = true;
+      }
+      else
+      */
+      {
+        while(refinement != -1)
         {
-          auto startTime = clock();
-          refinementStepQuick();
-          time = ((double) clock() - startTime) / CLOCKS_PER_SEC;
-        }
-        else
-          refinementStep();
-        if(!runWorkers)
-        {
-          interrupted = true;
-          break;
-        }
-        //If in quick mode, might update framebuffer after each refinement step
-        if(quickMode)
-        {
-          if(refinement >= 0 && time >= 0.2 && (max(winw, winh) >> refinement) < gridSize)
+          pthread_mutex_lock(&itersLock);
+          if(quickMode)
           {
-            gridSize = max(winw, winh) >> refinement;
-            if(gridSize == 0)
-              gridSize = 1;
-            //copy new pixels from main iters to aux
-            pthread_mutex_lock(&texLock);
-            for(int bi = 0; bi < (1 << refinement); bi++)
+            auto startTime = clock();
+            /*
+            if(gridSize < 8 && !ranDeepRefinement)
             {
-              int lox = (bi * winw) >> refinement;
-              int hix = ((bi + 1) * winw) >> refinement;
-              for(int bj = 0; bj < (1 << refinement); bj++)
-              {
-                int loy = (bj * winh) >> refinement;
-                int hiy = ((bj + 1) * winh) >> refinement;
-                float val = iters[lox + loy * winw];
-                for(int x = lox; x < hix; x++)
-                {
-                  for(int y = loy; y < hiy; y++)
-                  {
-                    auxIters[x + y * winw] = val;
-                  }
-                }
-              }
+              refineDeepPixels();
+              ranDeepRefinement = true;
             }
-            pthread_mutex_unlock(&texLock);
-            frameBufStale = true;
+            else
+            */
+            {
+              refinementStepQuick();
+            }
+            time = ((double) clock() - startTime) / CLOCKS_PER_SEC;
           }
+          else
+          {
+            refinementStep();
+          }
+          if(time >= 0.1)
+            updateFB = true;
+          pthread_mutex_unlock(&itersLock);
         }
+        runWorkers = false;
       }
-      if(interrupted)
+      if(updateFB && time < 0.2)
       {
-        //drawBuf interrupted, restart, possibly with completely new parameters/zoom/location
-        clearBitset(&computed);
-        runWorkers = true;
-        continue;
+        //framebuf/texture can only be updated by main thread
+        refreshTexture = true;
       }
-      gridSize = 1;
-      imageStale = false;
-      pthread_mutex_lock(&texLock);
-      memcpy(auxIters, iters, winw * winh * sizeof(float));
-      pthread_mutex_unlock(&texLock);
-      frameBufStale = true;
     }
     else
     {
-      usleep(16667);
+      //sleep for a frame of time
+      usleep(16666);
     }
   }
   return NULL;
@@ -167,6 +143,9 @@ static void resetView()
   loadValue(&pstride, 4.0 / tw);
   loadValue(&targetX, -0.5);
   loadValue(&targetY, 0);
+  clearBitset(&computed);
+  gridSize = 1000000;
+  runWorkers = true;
 }
 
 static void zoomIn(int mouseX, int mouseY)
@@ -200,32 +179,28 @@ static void zoomIn(int mouseX, int mouseY)
   int srcIndex = x + y * winw; \
   bool pixelComputed = getBit(&computed, srcIndex); \
   float val = iters[srcIndex]; \
-  float auxVal = auxIters[srcIndex]; \
   if(pixelComputed) \
     setBit(&computed, mapx + mapy * winw, 1); \
   bool xbound = mapx + 1 < winw; \
   bool ybound = mapy + 1 < winh; \
   iters[mapx + mapy * winw] = val; \
-  auxIters[mapx + mapy * winw] = auxVal; \
   if(xbound) \
   { \
     iters[(mapx + 1) + mapy * winw] = val; \
-    auxIters[(mapx + 1) + mapy * winw] = auxVal; \
     setBit(&computed, (mapx + 1) + mapy * winw, 0); \
   } \
   if(ybound) \
   { \
     iters[mapx + (mapy + 1) * winw] = val; \
-    auxIters[mapx + (mapy + 1) * winw] = auxVal; \
     setBit(&computed, mapx + (mapy + 1) * winw, 0); \
   } \
   if(xbound && ybound) \
   { \
     iters[(mapx + 1) + (mapy + 1) * winw] = val; \
-    auxIters[(mapx + 1) + (mapy + 1) * winw] = auxVal; \
     setBit(&computed, (mapx + 1) + (mapy + 1) * winw, 0); \
   } \
 }
+  pthread_mutex_lock(&itersLock);
   for(int y = loy; y < mouseY; y++)
   {
     int mapy = mouseY - (mouseY - y) * 2;
@@ -260,8 +235,9 @@ static void zoomIn(int mouseX, int mouseY)
   }
   gridSize *= 2;
   recomputeFramebuffer();
+  pthread_mutex_unlock(&itersLock);
 }
-
+ 
 static void zoomOut(int mouseX, int mouseY)
 {
   MAKE_STACK_FP(temp);
@@ -283,7 +259,7 @@ static void zoomOut(int mouseX, int mouseY)
   //don't do this if quick refinement is enabled (would create a quick, annoying grey flash)
   if(quickMode)
   {
-    //image is entirely invalid, so any new frame is an improvement
+    //image is considered entirely invalid, so any new frame is an improvement
     gridSize = 1000000;
     return;
   }
@@ -302,12 +278,11 @@ static void zoomOut(int mouseX, int mouseY)
   int srcIndex = mapx + mapy * winw; \
   bool pixelComputed = getBit(&computed, srcIndex); \
   float val = iters[srcIndex]; \
-  float auxVal = auxIters[srcIndex]; \
   if(pixelComputed) \
     setBit(&computed, dstIndex, 1); \
   iters[dstIndex] = val; \
-  auxIters[dstIndex] = auxVal; \
 }
+  pthread_mutex_lock(&itersLock);
   for(int y = mouseY; y >= loy; y--)
   {
     int mapy = mouseY - (mouseY - y) * 2;
@@ -347,21 +322,42 @@ static void zoomOut(int mouseX, int mouseY)
       if(x < lox || x >= hix || y < loy || y >= hiy)
       {
         int index = x + y * winw;
-        auxIters[index] = NOT_COMPUTED;
         iters[index] = NOT_COMPUTED;
         setBit(&computed, index, 0);
       }
     }
   }
   recomputeFramebuffer();
+  pthread_mutex_unlock(&itersLock);
+}
+
+//Mark all converged pixels as requiring recomputation
+static void markConvergedStale()
+{
+  for(int i = 0; i < winw * winh; i++)
+  {
+    if(iters[i] < 0)
+    {
+      setBit(&computed, i, 0);
+    }
+  }
+}
+
+static void markNonConvergedStale()
+{
+  for(int i = 0; i < winw * winh; i++)
+  {
+    if(iters[i] >= 0)
+    {
+      setBit(&computed, i, 0);
+    }
+  }
 }
 
 void interactiveMain(int imageW, int imageH)
 {
   quickMode = true;
-  gridSize = 1;
   clock_t frameStartTicks;
-  pthread_mutex_init(&texLock, NULL);
   w = imageW;
   //GUI controls take up about 200 pixels of vertical space below image
   h = imageH + 200;
@@ -369,12 +365,6 @@ void interactiveMain(int imageW, int imageH)
   th = imageH;
   iterScale = 1;
   colorFuncSel = 0;
-  auxIters = (float*) malloc(winw * winh * sizeof(float));
-  for(int i = 0; i < winw * winh; i++)
-  {
-    auxIters[i] = -1;
-  }
-  setImageIters(auxIters);
   char target[64];
   strcpy(target, "target.bin");
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER))
@@ -411,24 +401,29 @@ void interactiveMain(int imageW, int imageH)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tsize, tsize,
         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   }
-  //compute entire buffer immediately
-  textureClear();
-  clearBitset(&computed);
+  drawBuf();
+  recomputeFramebuffer();
+  refreshTexture = false;
+  runWorkers = false;
   //create asynchronous image generating threadw
   //always running along main thread
   //runs drawBuf when imageUpdate is true, otherwise sleeps for 16.7 ms
   //if main thread gets update event during image computation, drawBuf is
   //interrupted so that imageThread waits until ready to work again
   terminating = false;
+  pthread_mutex_init(&itersLock, NULL);
   pthread_t imageThread;
   pthread_create(&imageThread, NULL, imageThreadRoutine, NULL);
-  frameBufStale = true;
   frameStartTicks = clock();
+  bool relaunchWorkers = false;    //whether some pixels require computation
+  /*****************/
+  /* Main app loop */
+  /*****************/
   while(true)
   {
+    relaunchWorkers = false;
     SDL_Event event;
     bool quit = false;
-    bool interruptWorkers = false;
     while(SDL_PollEvent(&event))
     {
       ImGui_ImplSdl_ProcessEvent(&event);
@@ -463,11 +458,6 @@ void interactiveMain(int imageW, int imageH)
     //other corner of image
     ImVec2 tex2((float) tw / tsize, (float) th / tsize);
     imgSize = ImVec2(tw, th);
-    if(frameBufStale)
-    {
-      recomputeFramebuffer();
-      frameBufStale = false;
-    }
     ImGui::Image((void*) (intptr_t) textureID, imgSize, tex1, tex2);
     ImGui::Columns(2);
     //get cursor pos within image
@@ -483,9 +473,9 @@ void interactiveMain(int imageW, int imageH)
     {
       //left button, zoom in
       // formula: target += 0.5 * pstride * mousePos
+      runWorkers = false;
       zoomIn(cursor.x, cursor.y);
-      imageStale = true;
-      interruptWorkers = true;
+      relaunchWorkers = true;
     }
     else if(ImGui::IsItemClicked(1))
     {
@@ -493,29 +483,31 @@ void interactiveMain(int imageW, int imageH)
       if(zoomDepth > 0)
       {
         //formula: target -= 2 * pstride * mousePos
+        runWorkers = false;
         zoomOut(cursor.x, cursor.y);
-        imageStale = true;
-        interruptWorkers = true;
+        relaunchWorkers = true;
       }
     }
     if(ImGui::Button("Reset View"))
     {
       resetView();
-      imageStale = true;
-      interruptWorkers = true;
+      runWorkers = false;
+      relaunchWorkers = true;
     }
     ImGui::Text("Zoom level: %i", zoomDepth);
     ImGui::Text("Pixel distance: %.3Le", getValue(&pstride));
     ImGui::Text("Precision: %s", getPrecString());
     if(ImGui::Checkbox("Smooth coloring", &smooth))
     {
-      imageStale = true;
-      interruptWorkers = true;
+      runWorkers = false;
+      clearBitset(&computed);
+      relaunchWorkers = true;
     }
-    if(ImGui::Checkbox("Supersampling", &supersample) && supersample)
+    if(ImGui::Checkbox("Supersampling", &supersample))
     {
-      imageStale = true;
-      interruptWorkers = true;
+      runWorkers = false;
+      clearBitset(&computed);
+      relaunchWorkers = true;
     }
     ImGui::Checkbox("Quick Refinement", &quickMode);
     ImGui::NextColumn();
@@ -523,9 +515,18 @@ void interactiveMain(int imageW, int imageH)
     if(ImGui::SliderFloat("Max Iters", &inputIters, 100, 1000000, "%.0f", 4))
     {
       if(inputIters > maxiter)
-        imageStale = true;
+      {
+        //iter cap raised, only currently converged pixels can possibly change
+        markConvergedStale();
+      }
+      else
+      {
+        //iter cap reduced, only currently diverged pixels can possibly change
+        markNonConvergedStale();
+      }
       maxiter = inputIters;
-      interruptWorkers = true;
+      runWorkers = false;
+      relaunchWorkers = true;
     }
     //Color function selector
     {
@@ -539,8 +540,8 @@ void interactiveMain(int imageW, int imageH)
           colorMap = colorBasicLog;
         else if(colorFuncSel == EXPO_SEL)
           colorMap = colorBasicExpo;
-        //don't recompute iters, just update colors
-        frameBufStale = true;
+        //?????necessary?????? pthread_mutex_lock(&itersLock);
+        recomputeFramebuffer();
       }
     }
     //Iter scaling
@@ -548,7 +549,7 @@ void interactiveMain(int imageW, int imageH)
     {
       //only need to update framebuffer if color map is affected by scaling
       if(colorFuncSel != HIST_SEL)
-        frameBufStale = true;
+        recomputeFramebuffer();
     }
     //Target cache saving
     {
@@ -556,9 +557,16 @@ void interactiveMain(int imageW, int imageH)
       if(ImGui::Button("Save Target"))
         saveTargetCache(target);
     }
-    if(interruptWorkers && imageStale)
+    if(refreshTexture)
     {
-      runWorkers = false;
+      puts("Refreshing fb/texture only.");
+      recomputeFramebuffer();
+      refreshTexture = false;
+    }
+    if(!runWorkers && relaunchWorkers)
+    {
+      puts("Restarting workers to fill in non-computed pixels.");
+      runWorkers = true;
     }
     //*** End GUI ***
     ImGui::End();
@@ -576,12 +584,14 @@ void interactiveMain(int imageW, int imageH)
     }
     frameStartTicks = clock();
   }
+  /*****************/
+  /* End main loop */
+  /*****************/
   ImGui_ImplSdl_Shutdown();
   SDL_GL_DeleteContext(glcontext);
   SDL_DestroyWindow(win);
   SDL_Quit();
-  free(auxIters);
-  pthread_mutex_destroy(&texLock);
+  pthread_mutex_destroy(&itersLock);
   exit(0);
 }
 

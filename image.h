@@ -22,9 +22,6 @@ extern float* imgScratch;
 //is used by histogram colorings where range is not specified by caller
 #define DEFAULT_CYCLE_LEN 1000
 
-//set the iters buf to be used (different for interactive and cli)
-MANDELBROT_API void setImageIters(float* ii);
-
 typedef double (*Mapping) (double orig);
 
 typedef struct

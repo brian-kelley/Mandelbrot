@@ -35,3 +35,14 @@ void clearBitset(Bitset* b)
 {
   memset(b->buf, 0, b->words * sizeof(u64));
 }
+
+int bitsetPopcnt(Bitset* b)
+{
+  //could make faster but probably not necessary
+  int pop = 0;
+  for(int i = 0; i < b->bits; i++)
+  {
+    pop += getBit(b, i);
+  }
+  return pop;
+}

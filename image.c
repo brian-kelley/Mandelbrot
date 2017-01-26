@@ -5,7 +5,6 @@
 #define GET_B(px) (((px) & 0xFF00) >> 8)
 
 static float _expo;
-static float* imageIters;
 float* imgScratch;
 
 Uint32 lerp(Uint32 c1, Uint32 c2, double k)
@@ -16,16 +15,11 @@ Uint32 lerp(Uint32 c1, Uint32 c2, double k)
   return ((Uint32) red << 24) | ((Uint32) grn << 16) | ((Uint32) blu << 8) | 0xFF;
 }
 
-void setImageIters(float* ii)
-{
-  imageIters = ii;
-}
-
 //comparator returns -1 if lhs < rhs, 1 if lhs > rhs
 static int pixelCompare(const void* lhsRaw, const void* rhsRaw)
 {
-  float lhs = imageIters[*((int*) lhsRaw)];
-  float rhs = imageIters[*((int*) rhsRaw)];
+  float lhs = iters[*((int*) lhsRaw)];
+  float rhs = iters[*((int*) rhsRaw)];
   if(lhs == rhs)
     return 0;
   if(lhs < 0)
@@ -43,9 +37,9 @@ void handleNonColored()
 {
   for(int i = 0; i < winw * winh; i++)
   {
-    if(imageIters[i] == -1)
+    if(iters[i] == -1)
       frameBuf[i] = 0xFF;
-    else if(imageIters[i] < 0)
+    else if(iters[i] < 0)
       frameBuf[i] = 0x999999FF;
   }
 }
@@ -96,13 +90,13 @@ static void applyCyclicMapping(Image* im, Mapping func)
   int minVal = INT_MAX;
   for(int i = 0; i < winw * winh; i++)
   {
-    if(imageIters[i] > 0 && imageIters[i] < minVal)
-      minVal = imageIters[i];
+    if(iters[i] > 0 && iters[i] < minVal)
+      minVal = iters[i];
   }
   for(int i = 0; i < winw * winh; i++)
   {
-    if(imageIters[i] >= 0)
-      imgScratch[i] = func(imageIters[i] * iterScale);
+    if(iters[i] >= 0)
+      imgScratch[i] = func(iters[i] * iterScale);
     else
       imgScratch[i] = -1.0;
   }
@@ -150,9 +144,9 @@ void colorHistWeighted(Image* im, double* weights)
   int* pixelList = (int*) imgScratch;
   for(int i = 0; i < winw * winh; i++)
     pixelList[i] = i;
-  //sort pixelList (imageIters indices) according to the iter values
+  //sort pixelList (iters indices) according to the iter values
   qsort(pixelList, winw * winh, sizeof(int), pixelCompare);
-  if(imageIters[pixelList[0]] == -1)
+  if(iters[pixelList[0]] == -1)
   {
     //something wrong with computation, but fill screen with black and return
     for(int i = 0; i < winw * winh; i++)
@@ -161,7 +155,7 @@ void colorHistWeighted(Image* im, double* weights)
   }
   //get # of diverged pixels
   int diverged = winw * winh;
-  while(imageIters[pixelList[diverged - 1]] < 0)
+  while(iters[pixelList[diverged - 1]] < 0)
     diverged--;
   int* colorOffsets = alloca(im->numColors * sizeof(int));
   double* normalWeights = alloca(im->numColors * sizeof(double));
@@ -183,7 +177,7 @@ void colorHistWeighted(Image* im, double* weights)
   int firstOfValue = 0; //index of first first pixel encountered with ith value
   for(int i = 0; i < diverged; i++)
   {
-    if(imageIters[pixelList[i]] != imageIters[pixelList[firstOfValue]])
+    if(iters[pixelList[i]] != iters[pixelList[firstOfValue]])
       firstOfValue = i;
     while(colorOffsets[lowerColor + 1] <= firstOfValue)
       lowerColor++;

@@ -42,6 +42,7 @@ extern pthread_t monitor;
 extern ColorMap colorMap;
 extern Bitset computed;
 extern int refinement;    //0 = full image, ceil(log(winw)) = single pixels
+extern int gridSize;
 extern bool runWorkers;   //used to interrupt worker threads in interactive mode
 extern _Atomic int savings;
 
@@ -84,6 +85,10 @@ MANDELBROT_API void downgradeIters();    //update iteration cap between zooms
 
 MANDELBROT_API void refinementStep();
 MANDELBROT_API void refinementStepQuick();
+#ifdef INTERACTIVE
+MANDELBROT_API void updateAuxPixels(int* workQueue, int workSize);
+#endif
+MANDELBROT_API void refineDeepPixels();       //fully refine top X% pixels (which are sorted by iter count)
 
 MANDELBROT_API const char* getPrecString();
 

@@ -15,6 +15,7 @@ MANDELBROT_API void BitsetDtor(Bitset* b);
 MANDELBROT_API int getBit(Bitset* b, int index);
 MANDELBROT_API void setBit(Bitset* b, int index, int value);
 MANDELBROT_API void clearBitset(Bitset* b);
+MANDELBROT_API int bitsetPopcnt(Bitset* b);
 
 #endif
 
