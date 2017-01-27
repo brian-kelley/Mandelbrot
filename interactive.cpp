@@ -79,13 +79,16 @@ static void* imageThreadRoutine(void* unused)
       refinement = 0;
       while(runWorkers && refinement > -1)
       {
+        while((max(winw, winh) >> refinement) > gridSize)
+        {
+          //avoid overhead by starting with refinement level that improves image
+          refinement++;
+        }
         int prevGridSize = gridSize;
         pthread_mutex_lock(&itersLock);
         if(quickMode)
         {
-          printf("Running refinement step....");
           refinementStepQuick();
-          puts("done.");
         }
         else
         {
@@ -93,14 +96,11 @@ static void* imageThreadRoutine(void* unused)
         }
         if(gridSize <= prevGridSize)
         {
-          puts("Updating texture.");
+          //puts("Updating texture.");
           colorMap();
           textureStale = true;
         }
-        else
-        {
-          printf("Not updating fb because gridSize was %i but is now %i\n.", prevGridSize, gridSize);
-        }
+        //printf("Grid size: %i ====> %i\n", prevGridSize, gridSize);
         pthread_mutex_unlock(&itersLock);
       }
       if(bitsetPopcnt(&computed) == winw * winh)
@@ -248,6 +248,7 @@ static void zoomOut(int mouseX, int mouseY)
   {
     //image is considered entirely invalid, so any new frame is an improvement
     gridSize = 1000000;
+    clearBitset(&computed);
     return;
   }
   gridSize /= 2;
@@ -349,7 +350,10 @@ static void markNonConvergedStale()
 
 void interactiveMain(int imageW, int imageH)
 {
+  //set basic permanent options
   quickMode = true;
+  smooth = true;
+  supersample = false;
   clock_t frameStartTicks;
   w = imageW;
   //GUI controls take up about 200 pixels of vertical space below image
@@ -494,19 +498,6 @@ void interactiveMain(int imageW, int imageH)
     ImGui::Text("Zoom level: %i", zoomDepth);
     ImGui::Text("Pixel distance: %.3Le", getValue(&pstride));
     ImGui::Text("Precision: %s", getPrecString());
-    if(ImGui::Checkbox("Smooth coloring", &smooth))
-    {
-      runWorkers = false;
-      markNonConvergedStale();
-      relaunchWorkers = true;
-    }
-    if(ImGui::Checkbox("Supersampling", &supersample))
-    {
-      runWorkers = false;
-      markAllStale();
-      relaunchWorkers = true;
-    }
-    ImGui::Checkbox("Quick Refinement", &quickMode);
     ImGui::NextColumn();
     float inputIters = maxiter;
     if(ImGui::SliderFloat("Max Iters", &inputIters, 100, 1000000, "%.0f", 4))
@@ -563,14 +554,12 @@ void interactiveMain(int imageW, int imageH)
     }
     if(!runWorkers && relaunchWorkers)
     {
-      puts("Restarting workers to fill in non-computed pixels.");
       runWorkers = true;
     }
     //*** End GUI ***
     ImGui::End();
     if(textureStale)
     {
-      puts("Refreshing fb/texture only.");
       updateTexture();
     }
     glViewport(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);

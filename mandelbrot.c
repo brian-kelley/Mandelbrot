@@ -698,8 +698,8 @@ void refinementStep()
     }
   }
   //do the work
-  atomic_fetch_add_explicit(&pixelsDone, workSize, memory_order_relaxed);
   launchWorkers();
+  atomic_fetch_add_explicit(&pixelsDone, workSize, memory_order_relaxed);
   //iterate over blocks again & check if boundary is all one value
   //if so, flood fill block with the value & mark interior as computed
   for(int bi = 0; bi < (1 << refinement); bi++)
@@ -814,25 +814,27 @@ void refinementStepQuick()
     return;
   }
   //go back & fill blocks with color (if blocks are not yet single pixels)
-  if((max(winw, winh) >> refinement) >= 2)
+  for(int bi = 0; bi < (1 << refinement); bi++)
   {
-    for(int bi = 0; bi < (1 << refinement); bi++)
+    int lox = (winw * bi) >> refinement;
+    int hix = (winw * (bi + 1)) >> refinement;
+    for(int bj = 0; bj < (1 << refinement); bj++)
     {
-      int lox = (winw * bi) >> refinement;
-      int hix = (winw * (bi + 1)) >> refinement;
-      for(int bj = 0; bj < (1 << refinement); bj++)
+      int loy = (winh * bj) >> refinement;
+      int hiy = (winh * (bj + 1)) >> refinement;
+      //go along upper and left boundary of block, add each non-computed pixel to workq
+      for(int x = lox; x < hix; x++)
       {
-        int loy = (winh * bj) >> refinement;
-        int hiy = (winh * (bj + 1)) >> refinement;
-        //go along upper and left boundary of block, add each non-computed pixel to workq
-        for(int x = lox; x < hix; x++)
+        for(int y = loy; y < hiy; y++)
         {
-          for(int y = loy; y < hiy; y++)
+          if(x == lox && y == loy)
           {
-            if(!getBit(&computed, x + y * winw) && gridSize >= (winw >> refinement))
-            {
-              iters[x + y * winw] = iters[lox + loy * winw];
-            }
+            continue;
+          }
+          if(gridSize >= (winw >> refinement))
+          {
+            iters[x + y * winw] = iters[lox + loy * winw];
+            setBit(&computed, x + y * winw, 0);
           }
         }
       }
