@@ -24,7 +24,7 @@ static int colorFuncSel;
 //whether the image needs to be updated before next render
 static bool terminating;
 static bool quickMode;
-static bool refreshTexture;
+static bool textureStale;
 static pthread_mutex_t itersLock;
 
 enum ColorFuncOptions
@@ -53,13 +53,11 @@ enum ColorFuncOptions
  *    * Restart image thread
  */
 
-//update frameBuf using iters
-static void recomputeFramebuffer()
+//update the OpenGL texture using frameBuf
+//colorMap must have already been called
+//can only be called by the main thread (where GL context lives)
+static void updateTexture()
 {
-  pthread_mutex_lock(&itersLock);
-  colorMap();
-  //after colorMap() iters is not read so unlock it
-  pthread_mutex_unlock(&itersLock);
   for(int i = 0; i < tw * th; i++)
   {
     Uint32 temp = frameBuf[i]; 
@@ -68,6 +66,7 @@ static void recomputeFramebuffer()
   glBindTexture(GL_TEXTURE_2D, textureID);
   glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, tw, th, GL_RGBA, GL_UNSIGNED_BYTE, frameBuf);
   assert(!glGetError());
+  textureStale = false;
 }
 
 //internal interactive functions
@@ -100,9 +99,10 @@ static void* imageThreadRoutine(void* unused)
         {
           refinementStep();
         }
-        //if(gridSize <= 4)
+        if(gridSize <= 16 && (refinement == -1 || (winw >> refinement) <= 1))
         {
-          refreshTexture = true;
+          colorMap();
+          textureStale = true;
         }
         pthread_mutex_unlock(&itersLock);
       }
@@ -154,7 +154,6 @@ static void zoomIn(int mouseX, int mouseY)
   //expand all pixels to twice their distance from mouse location
   //must do only one quadrant at a time
   //get frame of pixels in current FB that will fill entire frame after zoom
-  return;
   mouseX += winw / 2;
   mouseY += winh / 2;
   int lox = mouseX / 2;
@@ -222,7 +221,8 @@ static void zoomIn(int mouseX, int mouseY)
     }
   }
   gridSize *= 2;
-  recomputeFramebuffer();
+  colorMap();
+  textureStale = true;
   pthread_mutex_unlock(&itersLock);
 }
  
@@ -315,7 +315,8 @@ static void zoomOut(int mouseX, int mouseY)
       }
     }
   }
-  recomputeFramebuffer();
+  colorMap();
+  textureStale = true;
   pthread_mutex_unlock(&itersLock);
 }
 
@@ -390,8 +391,8 @@ void interactiveMain(int imageW, int imageH)
         0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
   }
   drawBuf();
-  recomputeFramebuffer();
-  refreshTexture = false;
+  colorMap();
+  updateTexture();
   runWorkers = false;
   //create asynchronous image generating threadw
   //always running along main thread
@@ -413,6 +414,7 @@ void interactiveMain(int imageW, int imageH)
   /*****************/
   while(true)
   {
+    printf("Grid size: %i\n", gridSize);
     relaunchWorkers = false;
     SDL_Event event;
     bool quit = false;
@@ -532,7 +534,9 @@ void interactiveMain(int imageW, int imageH)
           colorMap = colorBasicLog;
         else if(colorFuncSel == EXPO_SEL)
           colorMap = colorBasicExpo;
-        recomputeFramebuffer();
+        //pthread_mutex_lock(&itersLock);
+        colorMap();
+        //pthread_mutex_unlock(&itersLock);
       }
     }
     //Iter scaling
@@ -541,7 +545,11 @@ void interactiveMain(int imageW, int imageH)
       //only need to update framebuffer if color map is affected by scaling
       if(colorFuncSel != HIST_SEL)
       {
-        recomputeFramebuffer();
+        //pthread_mutex_lock(&itersLock);
+        colorMap();
+        textureStale = true;
+        //pthread_mutex_unlock(&itersLock);
+        textureStale = true;
       }
     }
     //Target cache saving
@@ -550,12 +558,6 @@ void interactiveMain(int imageW, int imageH)
       if(ImGui::Button("Save Target"))
         saveTargetCache(target);
     }
-    if(refreshTexture)
-    {
-      puts("Refreshing fb/texture only.");
-      recomputeFramebuffer();
-      refreshTexture = false;
-    }
     if(!runWorkers && relaunchWorkers)
     {
       puts("Restarting workers to fill in non-computed pixels.");
@@ -563,6 +565,11 @@ void interactiveMain(int imageW, int imageH)
     }
     //*** End GUI ***
     ImGui::End();
+    if(textureStale)
+    {
+      puts("Refreshing fb/texture only.");
+      updateTexture();
+    }
     glViewport(0, 0, ImGui::GetIO().DisplaySize.x, ImGui::GetIO().DisplaySize.y);
     glClearColor(1, 1, 1, 1);
     glClear(GL_COLOR_BUFFER_BIT);
