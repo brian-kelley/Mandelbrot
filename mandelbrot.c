@@ -594,7 +594,6 @@ static void launchWorkers()
 
 void drawBuf()
 {
-  puts("S:LDFJL:KSDJF:LKSDJF:LKSDJF:LKSDJFL:KDJSF:");
   savings = 0;
   pixelsDone = 0;
   for(int i = 0; i < winw * winh; i++)
@@ -607,6 +606,8 @@ void drawBuf()
   {
     refinementStep();
   }
+  //runWorkers can be set to false during the process to interrupt workers
+  //must check if all pixels are actually computed
   if(atomic_load(&pixelsDone) == winw * winh)
   {
     gridSize = 1;
@@ -617,7 +618,6 @@ void drawBuf()
 
 void drawBufQuick()
 {
-  puts("S:LDFJL:KSDJF:LKSDJF:LKSDJF:LKSDJFL:KDJSF:");
   savings = 0;
   for(int i = 0; i < winw * winh; i++)
   {
@@ -780,7 +780,7 @@ void refinementStep()
     return;
   }
   refinement++;
-  gridSize = winw >> refinement;
+  gridSize = min(gridSize, max(winw, winh) >> refinement);
 }
 
 void refinementStepQuick()
@@ -807,8 +807,14 @@ void refinementStepQuick()
     prevx = x;
   }
   launchWorkers();
-  //go back & fill blocks with color
-  if((winw >> refinement) > 2)
+  if(runWorkers == false)
+  {
+    //just abort immediately, nothing else can be updated
+    //work is not wasted either, the pixels that were completed will be saved
+    return;
+  }
+  //go back & fill blocks with color (if blocks are not yet single pixels)
+  if((max(winw, winh) >> refinement) >= 2)
   {
     for(int bi = 0; bi < (1 << refinement); bi++)
     {
@@ -840,7 +846,7 @@ void refinementStepQuick()
     return;
   }
   refinement++;
-  gridSize = winw >> refinement;
+  gridSize = min(gridSize, max(winw, winh) >> refinement);
 }
 
 int _sampleCompare(const void* p1, const void* p2)

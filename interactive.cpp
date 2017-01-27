@@ -77,32 +77,29 @@ static void* imageThreadRoutine(void* unused)
     if(runWorkers)
     {
       refinement = 0;
-      while(refinement != -1)
+      while(runWorkers && refinement > -1)
       {
+        int prevGridSize = gridSize;
         pthread_mutex_lock(&itersLock);
         if(quickMode)
         {
-          auto startTime = clock();
-          /*
-          if(gridSize < 8 && !ranDeepRefinement)
-          {
-            refineDeepPixels();
-            ranDeepRefinement = true;
-          }
-          else
-          */
-          {
-            refinementStepQuick();
-          }
+          printf("Running refinement step....");
+          refinementStepQuick();
+          puts("done.");
         }
         else
         {
           refinementStep();
         }
-        if(gridSize <= 16 && (refinement == -1 || (winw >> refinement) <= 1))
+        if(gridSize <= prevGridSize)
         {
+          puts("Updating texture.");
           colorMap();
           textureStale = true;
+        }
+        else
+        {
+          printf("Not updating fb because gridSize was %i but is now %i\n.", prevGridSize, gridSize);
         }
         pthread_mutex_unlock(&itersLock);
       }
@@ -220,6 +217,8 @@ static void zoomIn(int mouseX, int mouseY)
       EXPAND_VAL;
     }
   }
+  if(gridSize == 0)
+    gridSize = 1;
   gridSize *= 2;
   colorMap();
   textureStale = true;
@@ -320,6 +319,11 @@ static void zoomOut(int mouseX, int mouseY)
   pthread_mutex_unlock(&itersLock);
 }
 
+static void markAllStale()
+{
+  clearBitset(&computed);
+}
+
 //Mark all converged pixels as requiring recomputation
 static void markConvergedStale()
 {
@@ -414,7 +418,6 @@ void interactiveMain(int imageW, int imageH)
   /*****************/
   while(true)
   {
-    printf("Grid size: %i\n", gridSize);
     relaunchWorkers = false;
     SDL_Event event;
     bool quit = false;
@@ -494,13 +497,13 @@ void interactiveMain(int imageW, int imageH)
     if(ImGui::Checkbox("Smooth coloring", &smooth))
     {
       runWorkers = false;
-      clearBitset(&computed);
+      markNonConvergedStale();
       relaunchWorkers = true;
     }
     if(ImGui::Checkbox("Supersampling", &supersample))
     {
       runWorkers = false;
-      clearBitset(&computed);
+      markAllStale();
       relaunchWorkers = true;
     }
     ImGui::Checkbox("Quick Refinement", &quickMode);
