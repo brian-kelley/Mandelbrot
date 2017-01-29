@@ -6,8 +6,8 @@ project (Mandelbrot)
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -std=c11 -Wall -march=native -mavx2 -ffast-math -fassociative-math")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -std=c++11 -Wall -Wno-extern-c-compat")
 
-set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -std=c11 -Wall -O3 -march=native -mtune=native -mavx2 -ffast-math -fomit-frame-pointer -fassociative-math -funroll-loops")
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++11 -O2 -Wno-extern-c-compat")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -std=c11 -Wall -Ofast -march=native -mtune=native -mavx2 -ffast-math -fomit-frame-pointer -fassociative-math -funroll-loops")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -std=c++11 -Ofast -march=native -mtune=native -mavx2 -ffast-math -fomit-frame-pointer -fassociative-math -funroll-loops -Wno-extern-c-compat")
 
 find_library(PTHREAD_LIB pthread)
 if(NOT PTHREAD_LIB)
